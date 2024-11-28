@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="dashboard">
+        <header>
+            <h1>Bot Dashboard</h1>
+            <div id="status" class="status">Connecting...</div>
+        </header>
+        
+        <div class="grid-container">
+            <div class="card" id="stats">
+                <h2>Statistics</h2>
+                <div class="stats-content"></div>
+            </div>
+            
+            <div class="card" id="journal">
+                <h2>Latest Journal</h2>
+                <div class="journal-content"></div>
+            </div>
+            
+            <div class="card" id="telegram">
+                <h2>Telegram Feed</h2>
+                <div class="feed-content"></div>
+            </div>
+            
+            <div class="card" id="discord">
+                <h2>Discord Feed</h2>
+                <div class="feed-content"></div>
+            </div>
+
+            <div class="card" id="x">
+                <h2>X Feed</h2>
+                <div class="feed-content"></div>
+            </div>
+        </div>
+    </div>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
