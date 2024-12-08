@@ -7,16 +7,14 @@ import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { uploadImage } from '../s3/s3imageService.js';
 
+import { updateMemory, loadMemory } from '../memory/memoryService.js';
+
 const STYLE_PROMPT_FILE = CONFIG.AI.STYLE_PROMPT_FILE || './assets/personality/stylePrompt.txt';
 
-// In-memory state for chat histories and timers
+// Simplified state object - only keep what's needed
 const state = {
-  chatHistories: {},
-  timers: {} // To track timers per chatId
+  timers: {}  // Keep timers in memory
 };
-
-// Batch interval in milliseconds (30 seconds)
-const BATCH_INTERVAL = 30000;
 
 const IMAGE_INTERVAL = 60 * 60 * 1000;
 const XPOST_INTERVAL = 2 * 60 * 60 * 1000;
@@ -26,12 +24,34 @@ let rateLimited = false;
 
 import mongoDBService from '../mongodb/mongodb.js';
 
+const lastMessageDecisions = {};
 // Revised handleText to process accumulated messages
-export async function handleText(chatId, openai) {
-
+export async function handleText(chatId, openai, bot) {
   try {
-    const history = state.chatHistories[chatId] || [];
+    // Load chat history from MongoDB
+    const history = (await mongoDBService.getCollection("messages")
+      .find({ chatId })
+      .sort({ timestamp: -1 })
+      .limit(100)
+      .toArray()).reverse();
+
     if (history.length === 0) return null;
+
+    // Check if message was already processed
+    if (lastMessageDecisions[chatId] >= history[history.length - 1].timestamp) {
+      return null;
+    }
+    lastMessageDecisions[chatId] = history[history.length - 1].timestamp;
+
+    // Update memory when needed
+    if (history.length >= 100) {
+      await updateMemory(history);
+      // Remove old messages but keep last 50
+      await mongoDBService.getCollection("messages").deleteMany({
+        chatId,
+        timestamp: { $lt: history[49].timestamp }
+      });
+    }
 
     // Combine all messages in the history
     const combinedMessages = history.map(h => {
@@ -45,15 +65,36 @@ export async function handleText(chatId, openai) {
       return `${h.username}: ${contentText}`;
     }).join('\n');
 
-    let shouldGenerateImage = Date.now() - lastImageTime > IMAGE_INTERVAL;
+    if (!history[history.length - 1].content[0].text.toLowerCase().includes("bob")) {
+
+      const respondDeciderMessages = [
+        { role: "system", content: "You are Bob the Obsequious snake's executive function. You ONLY respond with YES or NO" },
+        { role: "assistant", content: `Here is what I remember:${await loadMemory()}` },
+        {
+          role: "user", content: `
+        ${combinedMessages}
+        \n\nIs Bob the Snake part of this discussion and would it be appropriate for him to respond? Answer YES or NO.` },
+      ];
+
+      const respondDecider = await openai.chat.completions.create({
+        model: CONFIG.AI.TEXT_MODEL_SMALL,
+        messages: respondDeciderMessages,
+        max_tokens: 1,
+        temperature: 0.7,
+      });
+
+      console.log('Respond Decider:', respondDecider.choices[0].message.content);
+      if (`${respondDecider?.choices[0]?.message?.content}`.toUpperCase() === "NO") {
+        return null;
+      }
+    }
+    await bot.sendChatAction(chatId, 'typing');
+
+    let shouldGenerateImage = (Math.random() < 0.4) && (Date.now() - lastImageTime > IMAGE_INTERVAL);
 
     if (shouldGenerateImage) {
       const decisionMessages = [
         { role: "system", content: "You are a YES or NO decider. You ONLY respond with YES or NO" },
-        { role: "user", content: "Are you AI?" },
-        { role: "assistant", content: "YES" },
-        { role: "user", content: "Are you a human?" },
-        { role: "assistant", content: "NO" },
         { role: "user", content: combinedMessages + "\n\n Has someone asked for a drawing or image or meme? Reply with a single word: \"YES\" or \"NO\"" }
       ];
       const decision = await openai.chat.completions.create({
@@ -95,7 +136,7 @@ export async function handleText(chatId, openai) {
       const imagePrompt = await getLLMPrompt(combinedMessages);
       const imageBuffer = await generateImage(imagePrompt + "\n\n" + stylePrompt);
 
-      
+
       // Save the file locally
       const filePath = `./images/${randomUUID()}.png`;
       await fs.writeFile(filePath, imageBuffer);
@@ -116,7 +157,8 @@ export async function handleText(chatId, openai) {
       imageDescription = `Generated image based on prompt: ${imagePrompt}`;
 
       // Add image description to history
-      state.chatHistories[chatId].push({
+      await mongoDBService.getCollection("messages").insertOne({
+        chatId,
         role: 'assistant',
         content: [{ type: "image_description", text: imageDescription }],
         timestamp: Date.now()
@@ -150,15 +192,16 @@ export async function handleText(chatId, openai) {
       if (!author) {
         return [];
       }
-    
+
       const tweets = await mongoDBService.getCollection("tweets")
         .find({ author_id: author.id })
         .sort({ id: -1 })
         .limit(3)
         .toArray();
-    
+
       return tweets;
     }
+    await bot.sendChatAction(chatId, 'typing');
 
     const tweets = await getLastThreeTweetsByUsername("bobthesnek");
 
@@ -180,7 +223,8 @@ export async function handleText(chatId, openai) {
     const aiResponse = response.choices[0].message.content.trim();
 
     // Add AI response to history
-    state.chatHistories[chatId].push({
+    await mongoDBService.getCollection("messages").insertOne({
+      chatId,
       role: 'assistant',
       content: [{ type: "text", text: aiResponse }],
       timestamp: Date.now()
@@ -188,8 +232,8 @@ export async function handleText(chatId, openai) {
 
     return { text: aiResponse, imageUrl };
   } catch (error) {
-    console.error('Error handling text:', error);
-    return null;
+    console.error('Error in handleText:', error);
+    throw error;
   }
 }
 

@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import OpenAI from 'openai';
+import { APIClient } from 'openai/core.mjs';
 
 dotenv.config();
 
@@ -48,10 +49,12 @@ export const CONFIG = {
     RECONNECT_ATTEMPTS: 5,
     INITIAL_RECONNECT_DELAY: 1000,
     MAX_RECONNECT_DELAY: 60000,
-    MAX_CONSECUTIVE_ERRORS: 3,
-    POLLING_INTERVAL: 10 * 1000
+    MAX_CONSECUTIVE_ERRORS: 5,
+    POLLING_INTERVAL: 30 * 1000
   },
   AI: {
+    API_URL: process.env.OPENAI_API_URL,
+    API_KEY: process.env.OPENAI_API_KEY,
     TEXT_MODEL: "nousresearch/hermes-3-llama-3.1-405b",
     TEXT_MODEL_SMALL: "meta-llama/llama-3.2-1b-instruct",
     VISION_MODEL: "meta-llama/llama-3.2-11b-vision-instruct",

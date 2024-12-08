@@ -20,7 +20,10 @@
   "version": "1.0.0",
   "main": "bot.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "generate-memories": "node scripts/generateHistoricalMemories.js",
+    "generate-journals": "node scripts/journalGenerator.js",
+    "generate-weekly-memories": "node scripts/weeklyMemoryGenerator.js"
   },
   "type": "module",
   "author": "",

@@ -1,4 +1,5 @@
-import { handleText, state } from '../services/telegram/handlers.js';
+import mongoDBService from '../services/mongodb/mongodb.js';
+import { handleText } from '../services/telegram/handlers.js';
 import { MessageQueue } from './messageQueue.js';
 import xPostCapture from '../services/social/xPostCapture.js';
 
@@ -51,7 +52,6 @@ async function getImageDescription(bot, openai, fileId) {
 
 const messageQueue = new MessageQueue();
 let processingInterval;
-const MAX_HISTORY_LENGTH = parseInt(process.env.MAX_HISTORY_LENGTH, 10);
 
 // Add circuit breaker state
 const circuitBreaker = {
@@ -92,6 +92,16 @@ export async function setupMessageHandlers(bot, openai) {
     bot.on('message', async (msg) => {
       try {
         const chatId = msg.chat.id;
+
+        // if it contains a Ca ignore it
+        if (msg.text && msg.text.toLowerCase().includes('ca')) {
+          return;
+        }
+
+        // if it contains a word ending in pump ignore it
+        if (msg.text && msg.text.toLowerCase().split(' ').some(word => word.endsWith('pump'))) {
+          return;
+        }
         
         // Check for X.com status URLs
         if (msg.text && xPostCapture.isXStatusUrl(msg.text)) {
@@ -124,38 +134,43 @@ export async function setupMessageHandlers(bot, openai) {
 
 // Update logMessage function to handle images
 async function logMessage(chatId, msg, bot, openai) {
-  const userId = msg.from.id;
-  const username = msg.from.username || `${msg.from.first_name} ${msg.from.last_name || ''}`.trim();
-  const location = msg.location ? `${msg.location.latitude}, ${msg.location.longitude}` : "Unknown Location";
+  try {
+    const userId = msg.from.id;
+    const username = msg.from.username || `${msg.from.first_name} ${msg.from.last_name || ''}`.trim();
+    const location = msg.location ? `${msg.location.latitude}, ${msg.location.longitude}` : "Unknown Location";
 
-  let content = [];
-  if (msg.photo) {
-    const photo = msg.photo[msg.photo.length - 1];
-    const description = await getImageDescription(bot, openai, photo.file_id);
-    content.push(
-      { type: "text", text: msg.caption || "Shared an image:" },
-      { type: "image_description", text: description }
-    );
-  } else if (msg.text) {
-    content.push({ type: "text", text: msg.text });
-  }
+    let content = [];
+    if (msg.photo) {
+      const photo = msg.photo[msg.photo.length - 1];
+      const description = await getImageDescription(bot, openai, photo.file_id);
+      content.push(
+        { type: "text", text: msg.caption || "Shared an image:" },
+        { type: "image_description", text: description }
+      );
+    } else if (msg.text) {
+      content.push({ type: "text", text: msg.text });
+    }
 
-  // Initialize chat history if needed
-  if (!state.chatHistories[chatId]) {
-    state.chatHistories[chatId] = [];
-  }
+    // Store message in MongoDB
+    await mongoDBService.getCollection("messages").insertOne({
+      chatId,
+      userId,
+      username,
+      location,
+      content,
+      role: 'user',
+      timestamp: Date.now()
+    });
 
-  state.chatHistories[chatId].push({
-    role: 'user',
-    userId,
-    username,
-    location,
-    content,
-    timestamp: Date.now()
-  });
-
-  if (state.chatHistories[chatId].length > MAX_HISTORY_LENGTH) {
-    state.chatHistories[chatId] = state.chatHistories[chatId].slice(-MAX_HISTORY_LENGTH);
+    // Clean up old messages
+    const oldMessagesCutoff = Date.now() - (30 * 24 * 60 * 60 * 1000); // 30 days
+    await mongoDBService.getCollection("messages").deleteMany({
+      chatId,
+      timestamp: { $lt: oldMessagesCutoff }
+    });
+  } catch (error) {
+    console.error('Error logging message:', error);
+    throw error;
   }
 }
 
@@ -170,8 +185,15 @@ const handleError = (error, chatId) => {
       console.warn(`Connection error for chat ${chatId}, will retry: ${error.message}`);
       return true; // Should retry
     }
+    if (error.message.includes('CHAT_WRITE_FORBIDDEN')) {
+      console.warn(`Write access forbidden for chat ${chatId}: ${error.message}`);
+      return false; // Should retry
+    }
     if (error.message.includes('ETELEGRAM') || error.code === 429) {
       console.warn(`Rate limit hit for chat ${chatId}: ${error.message}`);
+      if (error.message === 'CHAT_WRITE_FORBIDDEN') {
+        return false;
+      }
       return true; // Should retry
     }
   }
@@ -206,7 +228,17 @@ async function processNextMessage(bot, openai, chatId) {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      await bot.sendChatAction(chatId, 'typing');
+      // Check if there are unprocessed messages
+      const lastMessage = await mongoDBService.getCollection("messages")
+        .find({ chatId })
+        .sort({ timestamp: -1 })
+        .limit(1)
+        .toArray();
+
+      if (!lastMessage.length || lastMessage[0].role === 'assistant') {
+        return;
+      }
+
       const response = await handleText(chatId, openai, bot);
       if (!response) return;
       
@@ -252,8 +284,7 @@ async function processNextMessage(bot, openai, chatId) {
   }
 }
 
-function startMessageProcessing(bot, openai) {
-  // Prevent multiple processing loops
+async function startMessageProcessing(bot, openai) {
   if (isProcessingLoopActive) {
     console.warn('Message processing loop is already active.');
     return;
@@ -264,7 +295,6 @@ function startMessageProcessing(bot, openai) {
   isProcessingLoopActive = true;
 
   async function process() {
-    // Check if the loop has been stopped
     if (!isProcessingLoopActive) {
       console.warn('Message processing loop has been stopped.');
       return;
@@ -276,34 +306,36 @@ function startMessageProcessing(bot, openai) {
       const chats = messageQueue.getAllChats();
       
       for (const chatId of chats) {
-        state.lastChecked = state.lastChecked || {};
-        state.lastChecked[chatId] = state.lastChecked[chatId] || 0;
-        if (state.chatHistories[chatId]?.length > 0 && state.chatHistories[chatId][state.chatHistories[chatId].length - 1].role !== 'assistant') {
+        try {
+          // Check for unprocessed messages
+          const lastMessage = await mongoDBService.getCollection("messages")
+            .find({ chatId })
+            .sort({ timestamp: -1 })
+            .limit(1)
+            .toArray();
 
-          try {
+          if (lastMessage.length > 0 && lastMessage[0].role !== 'assistant') {
             await processNextMessage(bot, openai, chatId);
-            // Reset consecutive errors on success
             consecutiveErrors = 0;
-          } catch (error) {
-            consecutiveErrors++;
-            console.error(`Error processing messages for chat ${chatId}: ${error.message}`);
-            if (consecutiveErrors >= maxConsecutiveErrors) {
-              console.error('Too many consecutive errors, restarting processing...');
-              stopMessageProcessing();
-              // Restart processing loop after delay to prevent immediate conflict
-              setTimeout(() => startMessageProcessing(bot, openai), 30000);
-              return;
-            }
+          }
+        } catch (error) {
+          consecutiveErrors++;
+          console.error(`Error processing messages for chat ${chatId}: ${error.message}`);
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            console.error('Too many consecutive errors, restarting processing...');
+            stopMessageProcessing();
+            consecutiveErrors = 0;
+            startMessageProcessing(bot, openai);
+            return;
           }
         }
       }
     }
-    // Schedule the next processing cycle
-    processingInterval = setTimeout(process, CONFIG.BOT.POLLING_INTERVAL || 33333); // Delay between cycles
+    
+    processingInterval = setTimeout(process, CONFIG.BOT.POLLING_INTERVAL || 33333);
   }
   
-  // Start the processing loop
-  processingInterval = setTimeout(async () => await process(), 1000); // Initial delay
+  processingInterval = setTimeout(async () => await process(), 1000);
 }
 
 export function stopMessageProcessing() {
