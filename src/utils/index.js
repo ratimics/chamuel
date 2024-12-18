@@ -1,8 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { promisify } from 'util';
 import net from 'net';
-import { CONFIG } from '../../config.js';
+import { CONFIG } from '../config/index.js';
 import { PublicKey, Connection, clusterApiUrl } from '@solana/web3.js'; // Updated import for Solana
 import axios from 'axios'; // Import axios for HTTP requests
 

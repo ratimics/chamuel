@@ -83,7 +83,7 @@ async function generateWeeklyMemories() {
     });
 
     const [targetClient, sourceClient] = await Promise.all([
-        MongoClient.connect(process.env.BOT_DB_URI),
+        MongoClient.connect(process.env.SRC_DB_URI),
         MongoClient.connect(process.env.MONGODB_URI)
     ]);
 

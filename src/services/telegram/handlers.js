@@ -18,6 +18,7 @@ const state = {
 
 const IMAGE_INTERVAL = 60 * 60 * 1000;
 const XPOST_INTERVAL = 2 * 60 * 60 * 1000;
+const X_POST_CHANCE = 1.0;
 let lastPostTime = 0;
 let lastImageTime = 0;
 let rateLimited = false;
@@ -26,6 +27,53 @@ import mongoDBService from '../mongodb/mongodb.js';
 
 const lastMessageDecisions = {};
 // Revised handleText to process accumulated messages
+import { MetaplexStorageService } from '../storage/metaplexStorage.js';
+import { getWallet } from '../../config/wallet.js';
+
+// Initialize Metaplex service with wallet
+const wallet = getWallet();
+console.log('Wallet:', wallet.publicKey.toString());
+const metaplexStorage = new MetaplexStorageService(wallet);
+
+import { retry } from '../../utils/retry.js';
+
+// Helper function for NFT creation
+async function createArtNFT(imageBuffer, metadata, tweet = null) {
+  try {
+    const imageMetadata = {
+      name: metadata.name,
+      description: metadata.description,
+      attributes: [
+        ...metadata.attributes,
+        { trait_type: 'Type', value: 'Art' },
+        ...(tweet ? [{
+          trait_type: 'Tweet',
+          value: tweet.url
+        }] : [])
+      ],
+      properties: {
+        files: [{
+          type: 'image/png',
+          uri: '' // Will be set after upload
+        }],
+        ...(tweet && {
+          tweet: {
+            text: tweet.text,
+            url: tweet.url
+          }
+        })
+      }
+    };
+
+    const nft = await metaplexStorage.createImageNFT(imageBuffer, imageMetadata);
+
+    return `https://solscan.io/token/${nft.address.toString()}`;
+  } catch (error) {
+    console.error('NFT creation failed:', error);
+    return null;
+  }
+}
+
 export async function handleText(chatId, openai, bot) {
   try {
     // Load chat history from MongoDB
@@ -110,8 +158,8 @@ export async function handleText(chatId, openai, bot) {
     }
     let imageUrl = null;
     let imageDescription = null;
-    let imageTweet = null;
     let stylePrompt;
+    let nftMintUrl = null;
 
     try {
       // Check if the file exists
@@ -132,56 +180,93 @@ export async function handleText(chatId, openai, bot) {
     stylePrompt = await fs.readFile('./stylePrompt.txt', 'utf-8');
 
     if (shouldGenerateImage) {
+      const postOnX = !rateLimited && Math.random() < X_POST_CHANCE && (Date.now() - lastPostTime > XPOST_INTERVAL);
       lastImageTime = Date.now();
+
+      // Generate image with retry mechanism
       const imagePrompt = await getLLMPrompt(combinedMessages);
-      const imageBuffer = await generateImage(imagePrompt + "\n\n" + stylePrompt);
+      const imageBuffer = await retry(
+        () => generateImage(
+          imagePrompt + "\n\n" + stylePrompt,
+          CONFIG.AI.CUSTOM_IMAGE_MODEL
+        ), 3
+      );
 
+      if (!imageBuffer) {
+        throw new Error('Failed to generate image after retries');
+      }
 
-      // Save the file locally
+      // Save and upload image
       const filePath = `./images/${randomUUID()}.png`;
       await fs.writeFile(filePath, imageBuffer);
-      console.log('Generated image:', filePath);
 
       try {
         imageUrl = await uploadImage(filePath);
         console.log('Uploaded image:', imageUrl);
-        // 10% chance to update the style prompt
-        if (Math.random() < 0.1) {
-          stylePrompt = await updateStylePrompt(stylePrompt, imageUrl);
-          await fs.writeFile('./stylePrompt.txt', stylePrompt);
+
+        let tweetData = null;
+        if (postOnX) {
+          lastPostTime = Date.now();
+
+          // Generate tweet text
+          const tweetResponse = await openai.chat.completions.create({
+            model: CONFIG.AI.TEXT_MODEL,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "assistant", content: `I generated an image with prompt: ${imagePrompt}` },
+              { role: "user", content: "Write a tweet to go along with the image you generated." }
+            ],
+            max_tokens: 128,
+            temperature: 0.8,
+          });
+
+          const tweetText = tweetResponse.choices[0].message.content.trim();
+
+          // Post to X with retry
+          const tweetResult = await retry(
+            () => postX({ text: tweetText }, '', imageBuffer),
+            2
+          );
+
+          if (!tweetResult) {
+            return;
+          }
+
+          if (tweetResult?.id) {
+            tweetData = {
+              text: tweetText,
+              url: `https://x.com/bobthesnek/status/${tweetResult.id}`
+            };
+            // Create NFT with all metadata
+            nftMintUrl = await createArtNFT(imageBuffer, {
+              name: `Bob's Art: ${randomUUID()}`,
+              description: imagePrompt,
+              attributes: [
+                { trait_type: 'prompt', value: imagePrompt },
+                { trait_type: 'style', value: stylePrompt },
+                { trait_type: 'xpost', value: `https://x.com/bobthesnek/status/${tweetResult.id}` }
+              ]
+            });
+          }
         }
       } catch (error) {
-        console.error('Error uploading image:', error);
+        console.error('Error in image processing:', error);
+        // Continue execution even if NFT creation fails
       }
 
       imageDescription = `Generated image based on prompt: ${imagePrompt}`;
 
-      // Add image description to history
+      // Add to history
       await mongoDBService.getCollection("messages").insertOne({
         chatId,
         role: 'assistant',
-        content: [{ type: "image_description", text: imageDescription }],
+        content: [{
+          type: "image_description",
+          text: imageDescription,
+          nftMint: nftMintUrl
+        }],
         timestamp: Date.now()
       });
-
-      if (!rateLimited && Date.now() - lastPostTime > XPOST_INTERVAL) {
-        lastPostTime = Date.now();
-        // Compose a sassy tweet to go along with it
-        const response = await openai.chat.completions.create({
-          model: CONFIG.AI.TEXT_MODEL,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "assistant", content: `I generated an image with the following description:\n\n ${imageDescription}` },
-            { role: "user", content: "Write a tweet to go with the image you generated." }
-          ],
-          max_tokens: 128,
-          temperature: 0.8,
-        });
-
-        imageTweet = response.choices[0].message.content.trim();
-        console.log('🐦 Tweet:', imageTweet);
-        await postX({ text: imageTweet }, '', imageBuffer);
-      }
     }
 
 
@@ -221,19 +306,26 @@ export async function handleText(chatId, openai, bot) {
     });
 
     const aiResponse = response.choices[0].message.content.trim();
+    const finalResponse = nftMintUrl
+      ? `${aiResponse}\n\nMint my art as NFT: ${nftMintUrl}`
+      : aiResponse;
 
     // Add AI response to history
     await mongoDBService.getCollection("messages").insertOne({
       chatId,
       role: 'assistant',
-      content: [{ type: "text", text: aiResponse }],
+      content: [{ type: "text", text: finalResponse }],
       timestamp: Date.now()
     });
 
-    return { text: aiResponse, imageUrl };
+    return { text: finalResponse, imageUrl };
   } catch (error) {
     console.error('Error in handleText:', error);
-    throw error;
+    // Return a graceful error response
+    return {
+      text: "Oops, something went wrong while processing that. Try again later! 🐍",
+      error: error.message
+    };
   }
 }
 

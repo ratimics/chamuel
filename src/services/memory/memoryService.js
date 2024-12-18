@@ -1,6 +1,9 @@
 import { CONFIG } from '../../config/index.js';
 import fs from 'fs/promises';
 import OpenAI from 'openai';
+import { MetaplexStorageService } from '../storage/metaplexStorage.js';
+import { getWallet } from '../../config/wallet.js';
+import { retry } from '../../utils/retry.js';
 
 const MEMORY_FILE = './memory.md';
 const MEMORY_SUMMARY_PROMPT = `You are Bob the Snake's memory processor. 
@@ -41,6 +44,48 @@ export async function summarizeMemory(previousMemory, recentMessages) {
     return response.choices[0].message.content;
 }
 
+async function publishMemoryToSolana(memory, timestamp) {
+    if (process.env.SOLANA_ENABLED !== 'true') return null;
+
+    try {
+        const storage = new MetaplexStorageService(getWallet());
+        
+        const metadata = {
+            name: `Bob's Memory - ${timestamp}`,
+            description: "A memory fragment from Bob the Snake",
+            attributes: [
+                { trait_type: 'Type', value: 'Memory' },
+                { trait_type: 'Timestamp', value: timestamp }
+            ],
+            properties: {
+                files: [{
+                    type: 'text/plain',
+                    uri: '' // Will be set during upload
+                }]
+            }
+        };
+
+        const uri = await retry(
+            () => storage.uploadContent(memory, metadata),
+            3
+        );
+
+        if (process.env.CREATE_MEMORY_NFTS === 'true') {
+            const nft = await retry(
+                () => storage.createMemoryNFT(memory, metadata.name),
+                3
+            );
+            console.log(`Created memory NFT: ${nft.address.toString()}`);
+            return nft.address.toString();
+        }
+
+        return uri;
+    } catch (error) {
+        console.error('Failed to publish memory to Solana:', error);
+        return null;
+    }
+}
+
 export async function updateMemory(recentMessages) {
     try {
         let previousMemory = '';
@@ -53,18 +98,20 @@ export async function updateMemory(recentMessages) {
         }
 
         const newMemory = await summarizeMemory(previousMemory, recentMessages);
-
-        // Add timestamp to memory content
         const memoryWithTimestamp = `// Generated at: ${currentTime}\n\n${newMemory}`;
 
+        // Write to main memory file
         await fs.writeFile(MEMORY_FILE, memoryWithTimestamp);
 
         // Save timestamped version
         const timestamp = currentTime.replace(/[:.]/g, '-');
         await fs.writeFile(`./memories/memory-${timestamp}.md`, memoryWithTimestamp);
 
+        // Publish to Solana if enabled
+        const nftAddress = await publishMemoryToSolana(newMemory, currentTime);
+        
         memory = newMemory;
-        return newMemory;
+        return { memory: newMemory, nftAddress };
     } catch (error) {
         console.error('Error updating memory:', error);
         throw error;

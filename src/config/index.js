@@ -3,7 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import OpenAI from 'openai';
-import { APIClient } from 'openai/core.mjs';
 
 dotenv.config();
 
@@ -58,6 +57,13 @@ export const CONFIG = {
     TEXT_MODEL: "nousresearch/hermes-3-llama-3.1-405b",
     TEXT_MODEL_SMALL: "meta-llama/llama-3.2-1b-instruct",
     VISION_MODEL: "meta-llama/llama-3.2-11b-vision-instruct",
+    IMAGE_MODEL: process.env.IMAGE_MODEL || "black-forest-labs/flux-schnell",
+    CUSTOM_IMAGE_MODEL: process.env.CUSTOM_IMAGE_MODEL || "black-forest-labs/flux-dev",
+    CUSTOM_PROMPT: {
+      "black-forest-labs/flux-schnell": "A funny meme, signed by \"Bob the Snake\"",
+      "black-forest-labs/flux-dev": "A funny meme, signed by \"Bob the Snake\"",
+      "immanencer/bobthesnek": "SNEK A funny meme, signed by \"Bob the Snake\" SNEK"
+    },
     IMAGE_CACHE_SIZE: 1000, // Maximum number of cached image descriptions
     REQUEST_TIMEOUT: 30000,
     MAX_RETRIES: 3,
@@ -70,6 +76,17 @@ export const CONFIG = {
   SITE: {
     URL: process.env.YOUR_SITE_URL,
     NAME: process.env.YOUR_SITE_NAME
+  },
+  SOLANA: {
+    ENABLED: process.env["SOLANA_ENABLED"] || true,
+    WALLET_PATH: process.env["SOLANA_WALLET_PATH"] || "./solana-wallet.json",
+    NETWORK: process.env["SOLANA_NETWORK"] || "mainnet",
+    RPC_URL: process.env["SOLANA_RPC_URL"] || "https://api.mainnet.solana.com",
+    CREATE_MEMORY_NFTS: process.env["CREATE_MEMORY_NFTS"] || true,
+  },
+  IRYS: {
+    ADDRESS: process.env.IRYS_ADDRESS || 'https://node2.irys.xyz',
+    TIMEOUT: process.env.IRYS_TIMEOUT || 30000
   },
 };
 

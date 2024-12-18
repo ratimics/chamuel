@@ -33,19 +33,15 @@ async function downloadImage(url) {
 }
 
 // Generate an image based on a provided prompt using Replicate
-export async function generateImage(prompt) {
+export async function generateImage(prompt, model = CONFIG.AI.IMAGE_MODEL) {
   try {
     if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
       throw new Error('Invalid prompt provided for image generation.');
     }
-
-    // Select a Replicate model. For general-purpose image generation, Stable Diffusion is a good choice.
-    // You can choose other models based on your specific needs.
-    const model = process.env.CUSTOM_IMAGE_GEN_MODEL; // Replace with your desired model
   
     // Define the input parameters for the model
     const input = {
-      prompt: "SNEK " + prompt,
+      prompt: prompt + `\n\n ${CONFIG.AI.CUSTOM_PROMPT[model] || ''}`,
       // You can adjust other parameters based on the model's requirements
       width: 512,
       height: 512,
