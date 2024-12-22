@@ -5,4 +5,5 @@
 *.webp
 *.png
 *.jpg
+*.gif
 .dev-wallet.json

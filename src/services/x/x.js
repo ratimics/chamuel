@@ -92,7 +92,7 @@ async function uploadImageBuffer(imageBuffer, type = 'png') {
 
 let rateLimitReset = 0;
 // Enhanced function to post tweets with various options, image attachment, and error handling
-export async function postX(params, accountId = '', imageBuffer = null) {
+export async function postX(params, accountId = '', imageBuffer = null, type = 'png') {
     const { text, ...otherParams } = params;
     const tweetChunks = chunkText(text || '');
 
@@ -108,7 +108,7 @@ export async function postX(params, accountId = '', imageBuffer = null) {
     // Upload image if buffer is provided
     if (imageBuffer) {
         try {
-            mediaId = await uploadImageBuffer(imageBuffer);
+            mediaId = await uploadImageBuffer(imageBuffer, type);
         } catch (error) {
             console.error('🌳 Failed to upload image, proceeding without it.');
             console.error(error);

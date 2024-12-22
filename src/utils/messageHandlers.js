@@ -1,5 +1,5 @@
 import mongoDBService from '../services/mongodb/mongodb.js';
-import { handleText } from '../services/telegram/handlers.js';
+import { handleText } from '../services/telegram/orchestrator.js';
 import { MessageQueue } from './messageQueue.js';
 import xPostCapture from '../services/social/xPostCapture.js';
 
@@ -244,7 +244,13 @@ async function processNextMessage(bot, openai, chatId) {
       
 
       if (response.imageUrl) {
-        await bot.sendPhoto(chatId, response.imageUrl);
+        const ext = response.imageUrl.substring(response.imageUrl.length - 3);
+        if (ext === 'gif') {
+          await bot.sendAnimation(chatId, response.imageUrl);
+        }
+        if (ext === 'png') {
+          await bot.sendPhoto(chatId, response.imageUrl);
+        }
       }
       await bot.sendMessage(chatId, response.text);
       
