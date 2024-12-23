@@ -49,7 +49,7 @@ export const CONFIG = {
     INITIAL_RECONNECT_DELAY: 1000,
     MAX_RECONNECT_DELAY: 60000,
     MAX_CONSECUTIVE_ERRORS: 5,
-    POLLING_INTERVAL: 30 * 1000
+    POLLING_INTERVAL: process.env['POLLING_INTERVAL'] || 10 * 1000
   },
   AI: {
     API_URL: process.env.OPENAI_API_URL,
@@ -62,8 +62,9 @@ export const CONFIG = {
     CUSTOM_PROMPT: {
       "black-forest-labs/flux-schnell": "A funny meme, signed by \"Bob the Snake\"",
       "black-forest-labs/flux-dev": "A funny meme, signed by \"Bob the Snake\"",
-      "immanencer/bobthesnek": "SNEK A funny meme, signed by \"Bob the Snake\" SNEK"
+      "immanencer/bobthesnek": "SNEK A funny meme, signed by \"Bob the Snake\""
     },
+    VIDEO_PROBABILITY: 0.2,
     IMAGE_CACHE_SIZE: 1000, // Maximum number of cached image descriptions
     REQUEST_TIMEOUT: 30000,
     MAX_RETRIES: 3,

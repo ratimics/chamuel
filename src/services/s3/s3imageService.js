@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 
 dotenv.config();
 
@@ -70,25 +71,26 @@ export async function uploadImage(filePath) {
   }
 }
 
-export async function downloadImage(imageUrl, savePath) {
+export async function downloadImage(imageUrl, saveDir = './media') {
   try {
-    // Validate the image URL
-    if (!imageUrl.startsWith(CLOUDFRONT_DOMAIN)) {
-      console.error(`Error: The image URL must start with your CloudFront domain (${CLOUDFRONT_DOMAIN})`);
-      return;
-    }
-
     // Send GET request to download the image
     const response = await axios.get(imageUrl, {
       responseType: 'stream',
     });
 
     if (response.status === 200) {
+      // Extract file name from URL
+      const fileName = randomUUID();
+      const { pathname } = new URL(imageUrl);
+      const ext = path.extname(pathname); // e.g. ".jpg"
+      
       // Ensure the save directory exists
-      const dir = path.dirname(savePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+      if (!fs.existsSync(saveDir)) {
+        fs.mkdirSync(saveDir, { recursive: true });
       }
+
+      // Construct full save path
+      const savePath = path.join(saveDir, fileName + ext);
 
       // Create a write stream to save the image
       const writer = fs.createWriteStream(savePath);
@@ -100,7 +102,7 @@ export async function downloadImage(imageUrl, savePath) {
       return new Promise((resolve, reject) => {
         writer.on('finish', () => {
           console.log(`Image downloaded successfully and saved to "${savePath}"`);
-          resolve();
+          resolve(savePath); // Resolve with the file path
         });
         writer.on('error', (err) => {
           console.error('Error writing the image to disk:', err.message);
@@ -115,3 +117,4 @@ export async function downloadImage(imageUrl, savePath) {
     throw error; // Re-throw error instead of just logging
   }
 }
+

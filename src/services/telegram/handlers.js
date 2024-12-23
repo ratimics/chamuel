@@ -1,5 +1,5 @@
 import { CONFIG, SYSTEM_PROMPT } from '../../config/index.js';
-import { generateImage, getLLMPrompt, updateStylePrompt } from '../../utils/imageGenerator.js';
+import { generateImage, getLLMPrompt, downloadImage } from '../../utils/imageGenerator.js';
 
 import { postX } from '../x/x.js';
 
@@ -157,6 +157,7 @@ export async function handleText(chatId, openai, bot) {
       shouldGenerateImage = `${decision?.choices[0]?.message?.content}`.toUpperCase() === "YES";
     }
     let imageUrl = null;
+    let filePath = null;
     let imageDescription = null;
     let stylePrompt;
     let nftMintUrl = null;
@@ -185,19 +186,23 @@ export async function handleText(chatId, openai, bot) {
 
       // Generate image with retry mechanism
       const imagePrompt = await getLLMPrompt(combinedMessages);
-      const imageBuffer = await retry(
+      const imageUrl = await retry(
         () => generateImage(
           imagePrompt + "\n\n" + stylePrompt,
           CONFIG.AI.CUSTOM_IMAGE_MODEL
         ), 3
       );
 
+      
+    console.log('Generated image URL:', imageUrl.toString());
+    const imageBuffer = await downloadImage(imageUrl.toString());
+
       if (!imageBuffer) {
         throw new Error('Failed to generate image after retries');
       }
 
       // Save and upload image
-      const filePath = `./images/${randomUUID()}.png`;
+      filePath = `./images/${randomUUID()}.png`;
       await fs.writeFile(filePath, imageBuffer);
 
       try {
@@ -318,7 +323,7 @@ export async function handleText(chatId, openai, bot) {
       timestamp: Date.now()
     });
 
-    return { text: finalResponse, imageUrl };
+    return { text: finalResponse, imageUrl, filePath };
   } catch (error) {
     console.error('Error in handleText:', error);
     // Return a graceful error response

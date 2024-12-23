@@ -5,9 +5,9 @@
 // Example of a global configuration object
 export const CONFIG = {
     AI: {
-      TEXT_MODEL_SMALL: 'gpt-3.5-turbo',
-      TEXT_MODEL: 'gpt-4',
-      CUSTOM_IMAGE_MODEL: 'my-custom-image-model',
+      TEXT_MODEL_SMALL: 'nousresearch/hermes-3-llama-3.1-70b',
+      TEXT_MODEL: 'nousresearch/hermes-3-llama-3.1-405b',
+      CUSTOM_IMAGE_MODEL: 'immanencer/mirquo' || process.env['AI_CUSTOM_IMAGE_MODEL'],
       STYLE_PROMPT_FILE: './assets/personality/stylePrompt.txt'
     },
     IMAGE_INTERVAL: 60 * 60 * 1000,    // 1 hour

@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 
 import { CONFIG } from '../../config/index.js';
 import { convertVideoToGif } from '../../utils/convertVideoToGif.js';
-import { uploadImage } from '../s3/s3imageService.js';
+import { uploadImage, downloadImage } from '../s3/s3imageService.js';
 import { generateImage, getLLMPrompt } from '../../utils/imageGenerator.js';
 import { retry } from '../../utils/retry.js';
 import { randomUUID } from 'crypto';
@@ -35,7 +35,7 @@ export class MediaService {
         return Math.random() < VIDEO_PROBABILITY;
     }
 
-    static async generateVideoBuffer(prompt) {
+    static async generateVideoBuffer(prompt, first_frame_image) {
         const replicate = new Replicate({
             auth: process.env.REPLICATE_API_TOKEN,
         });
@@ -44,8 +44,8 @@ export class MediaService {
             // Generate video using Replicate
             const output = await replicate.run("minimax/video-01-live", {
                 input: { 
-                    prompt: "best quality, 4k, HDR, "+ prompt,
-                    prompt_optimizer: true,
+                    prompt: "best quality, 4k, HDR, SNEK " + prompt,
+                    first_frame_image
                  }
             });
 
@@ -70,10 +70,19 @@ export class MediaService {
     static async generateMediaBuffer(combinedMessages) {
         const stylePrompt = await this.getStylePrompt();
         const prompt = await getLLMPrompt(combinedMessages);
-        const fullPrompt = `${prompt}\n\n${stylePrompt}`;
+        const fullPrompt = `Your current style: ${stylePrompt}\nPrepare a prompt for an image generating ai describing the following image in the above style.\n${prompt}\n\n`;
+        
+        const imageUrl = await retry(
+            () => generateImage(fullPrompt, CONFIG.AI.CUSTOM_IMAGE_MODEL),
+            3
+        );
+
+        if (!imageUrl) {
+            throw new Error('Failed to generate image after retries');
+        }
 
         if (this.shouldGenerateVideo()) {
-            const gifBuffer = await this.generateVideoBuffer(fullPrompt);
+            const gifBuffer = await this.generateVideoBuffer(fullPrompt, imageUrl);
             return {
                 buffer: gifBuffer,
                 prompt,
@@ -81,20 +90,14 @@ export class MediaService {
                 type: 'gif'
             };
         } else {
-            const imageBuffer = await retry(
-                () => generateImage(fullPrompt, CONFIG.AI.CUSTOM_IMAGE_MODEL),
-                3
-            );
-
-            if (!imageBuffer) {
-                throw new Error('Failed to generate image after retries');
-            }
-
+            // download the image from replicate
+            const filePath = await downloadImage(imageUrl.toString());
+            const imageBuffer = await fs.readFile(filePath);
             return {
+                type: 'png',
                 buffer: imageBuffer,
-                prompt,
                 stylePrompt,
-                type: 'image'
+                prompt,
             };
         }
     }
@@ -111,19 +114,6 @@ export class MediaService {
         const url = await uploadImage(filePath); // Assuming uploadImage works for both images and GIFs
         console.log('Uploaded media:', url);
         return url;
-    }
-
-    static async process(combinedMessages) {
-        const { buffer, prompt, stylePrompt, type } = await this.generateMediaBuffer(combinedMessages);
-        const filePath = await this.saveMediaLocally(buffer, type);
-        const url = await this.uploadMediaToS3(filePath);
-        
-        return {
-            url,
-            prompt,
-            stylePrompt,
-            type
-        };
     }
 }
 // ----------------------------------------------------

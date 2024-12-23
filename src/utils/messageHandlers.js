@@ -4,12 +4,14 @@ import { MessageQueue } from './messageQueue.js';
 import xPostCapture from '../services/social/xPostCapture.js';
 
 import { CONFIG } from '../config/index.js';
-
+import { sendTextMessage, sendGif, sendImage } from './mediaHandlers.js';
 // Add image cache
 const imageCache = new Map();
 
 const maxConsecutiveErrors = CONFIG.BOT.MAX_CONSECUTIVE_ERRORS || 5;
 let consecutiveErrors = 0;
+
+
 
 // Helper function to get image description
 async function getImageDescription(bot, openai, fileId) {
@@ -109,8 +111,6 @@ export async function setupMessageHandlers(bot, openai) {
             const capturedPost = await xPostCapture.capturePost(msg);
             if (capturedPost) {
               console.log('Captured X post:', capturedPost.postId);
-              // Optionally acknowledge capture
-              // await bot.sendMessage(chatId, '✓ Post captured');
             }
           } catch (error) {
             console.error('Error capturing X post:', error);
@@ -210,10 +210,11 @@ const getBackoffDelay = (retryCount, baseDelay = 1000, maxDelay = 30000) => {
 // Flag to ensure only one processing loop is active
 let isProcessingLoopActive = false;
 
+// Fixes in processNextMessage function
 async function processNextMessage(bot, openai, chatId) {
   if (isCircuitOpen()) {
     console.warn('Circuit breaker is open, skipping message processing');
-    return;
+    return { continue: false };  // Added consistent return
   }
 
   let retryCount = 0;
@@ -223,7 +224,6 @@ async function processNextMessage(bot, openai, chatId) {
   const attempt = async () => {
     try {
       if (retryCount > 0) {
-        // Add increasing delay between retries with jitter
         const delay = getBackoffDelay(retryCount);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -236,27 +236,49 @@ async function processNextMessage(bot, openai, chatId) {
         .toArray();
 
       if (!lastMessage.length || lastMessage[0].role === 'assistant') {
-        return;
+        return { continue: false };
       }
 
       const response = await handleText(chatId, openai, bot);
-      if (!response) return;
       
+      // Handle null response case explicitly
+      if (!response) {
+        return { continue: false };
+      }
 
-      if (response.imageUrl) {
-        const ext = response.imageUrl.substring(response.imageUrl.length - 3);
-        if (ext === 'gif') {
-          await bot.sendAnimation(chatId, response.imageUrl);
-        }
-        if (ext === 'png') {
-          await bot.sendPhoto(chatId, response.imageUrl);
+      // Store assistant's response in MongoDB before sending
+      await mongoDBService.getCollection("messages").insertOne({
+        chatId,
+        content: [{ type: 'text', text: response.text, imageUrl: response.imageUrl }],
+        role: 'assistant',
+        timestamp: Date.now()
+      });
+
+      // Handle media responses
+      if (response.filePath) {
+        const ext = response.filePath.split('.').pop().toLowerCase();
+        try {
+          if (ext === 'gif') {
+            await sendGif(bot, chatId, response.imageUrl);
+          } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+            await sendImage(bot, chatId, response.imageUrl);
+          }
+        } catch (error) {
+          console.error(`Failed to send media: ${error.message}`);
+          // Continue with text message even if media fails
         }
       }
-      await bot.sendMessage(chatId, response.text);
+
+      // Only send text message if it exists
+      if (response.text) {
+        await sendTextMessage(bot, chatId, response.text);
+      }
       
       // Reset circuit breaker on success
       resetCircuitBreaker();
-      return response;
+      consecutiveErrors = 0;  // Reset consecutive errors on success
+      
+      return { continue: true, response };  // Added consistent return with response
 
     } catch (error) {
       lastError = error;
@@ -268,7 +290,7 @@ async function processNextMessage(bot, openai, chatId) {
         if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
           circuitBreaker.isOpen = true;
           console.error('Circuit breaker opened due to persistent connection failures');
-          return;
+          return { continue: false };
         }
 
         if (retryCount < maxRetries) {
@@ -283,13 +305,15 @@ async function processNextMessage(bot, openai, chatId) {
   };
 
   try {
-    await attempt();
+    return await attempt();
   } catch (error) {
     console.error(`Error processing messages for chat ${chatId}: ${error.message}`);
-    throw error;
+    // Return a consistent error response
+    return { continue: false, error: error.message };
   }
 }
 
+// Fix in startMessageProcessing function
 async function startMessageProcessing(bot, openai) {
   if (isProcessingLoopActive) {
     console.warn('Message processing loop is already active.');
@@ -313,17 +337,19 @@ async function startMessageProcessing(bot, openai) {
       
       for (const chatId of chats) {
         try {
-          // Check for unprocessed messages
-          const lastMessage = await mongoDBService.getCollection("messages")
-            .find({ chatId })
-            .sort({ timestamp: -1 })
-            .limit(1)
-            .toArray();
+          const processLoop = async (remainingCycles = 3) => {
+            if (remainingCycles <= 0) return;
+            
+            const result = await processNextMessage(bot, openai, chatId);
+            
+            if (result && result.continue) {
+              return processLoop(remainingCycles - 1);
+            }
+          };
 
-          if (lastMessage.length > 0 && lastMessage[0].role !== 'assistant') {
-            await processNextMessage(bot, openai, chatId);
-            consecutiveErrors = 0;
-          }
+          await processLoop();
+          messageQueue.removeMessage(chatId);  // Remove processed message
+
         } catch (error) {
           consecutiveErrors++;
           console.error(`Error processing messages for chat ${chatId}: ${error.message}`);
@@ -331,6 +357,7 @@ async function startMessageProcessing(bot, openai) {
             console.error('Too many consecutive errors, restarting processing...');
             stopMessageProcessing();
             consecutiveErrors = 0;
+            await new Promise(resolve => setTimeout(resolve, 5000));  // Add delay before restart
             startMessageProcessing(bot, openai);
             return;
           }
@@ -338,11 +365,20 @@ async function startMessageProcessing(bot, openai) {
       }
     }
     
-    processingInterval = setTimeout(process, CONFIG.BOT.POLLING_INTERVAL || 33333);
+    processingInterval = setTimeout(async () => await process(), CONFIG.BOT.POLLING_INTERVAL || 33333);
   }
   
   processingInterval = setTimeout(async () => await process(), 1000);
 }
+
+// Add message queue cleanup
+function cleanupMessageQueue() {
+  const cutoffTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
+  messageQueue.cleanup(cutoffTime);
+}
+
+// Add periodic cleanup
+setInterval(cleanupMessageQueue, 60 * 60 * 1000); // Run every hour
 
 export function stopMessageProcessing() {
   if (processingInterval) {

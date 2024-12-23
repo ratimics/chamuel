@@ -18,7 +18,7 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
-async function downloadImage(url) {
+export async function downloadImage(url) {
   try {
       const response = await fetch(url);
       if (!response.ok) {
@@ -51,11 +51,9 @@ export async function generateImage(prompt, model = CONFIG.AI.IMAGE_MODEL) {
     // Get the temporary URL from Replicate
     const output = await replicate.run(model, { input });
 
-    const imageUrl = output.url ? output.url() : [output];
-
-    console.log('Generated image URL:', imageUrl.toString());
-    const imageBuffer = await downloadImage(imageUrl.toString());
-    return imageBuffer;
+    const imageUrl = (output.url ? output.url() : [output]).toString();
+    console.log('Generated image URL:', imageUrl);
+    return imageUrl;
   } catch (error) {
     console.error('Image generation error:', error);
     throw error;

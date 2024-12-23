@@ -4,11 +4,39 @@ export class MessageQueue {
     this.processing = false;
   }
 
+  /**
+   * Removes messages older than the given cutoffTime.
+   * If a queue becomes empty, removes that chatId entirely from the map.
+   *
+   * @param {number} cutoffTime - Messages older than this timestamp (ms) will be removed.
+   */
+  cleanup(cutoffTime) {
+    for (const [chatId, queue] of this.queues.entries()) {
+      // Filter out old messages
+      const filteredQueue = queue.filter(message => {
+        return message.timestamp && message.timestamp > cutoffTime;
+      });
+
+      // If no messages remain, delete the entire chatId key
+      if (filteredQueue.length === 0) {
+        this.queues.delete(chatId);
+      } else {
+        this.queues.set(chatId, filteredQueue);
+      }
+    }
+  }
+
   addMessage(chatId, message) {
     if (!this.queues.has(chatId)) {
       this.queues.set(chatId, []);
     }
     this.queues.get(chatId).push(message);
+  }
+
+  removeMessage(chatId) {
+    if (this.queues.has(chatId)) {
+      this.queues.get(chatId).pop();
+    }
   }
 
   hasMessages() {
