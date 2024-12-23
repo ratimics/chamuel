@@ -41,10 +41,10 @@ async function getImageDescription(bot, openai, fileId) {
     });
 
     const description = response.choices[0].message.content;
-    
+
     // Cache the result
     imageCache.set(fileId, description);
-    
+
     return description;
   } catch (error) {
     console.error('Error getting image description:', error);
@@ -74,7 +74,7 @@ function resetCircuitBreaker() {
 // Check if circuit is open
 function isCircuitOpen() {
   if (!circuitBreaker.isOpen) return false;
-  
+
   // Check if timeout has passed
   if (Date.now() - circuitBreaker.lastFailure > circuitBreaker.timeout) {
     resetCircuitBreaker();
@@ -87,7 +87,7 @@ export async function setupMessageHandlers(bot, openai) {
   try {
     // Initialize xPostCapture
     await xPostCapture.initialize();
-    
+
     // Start message processing loop
     startMessageProcessing(bot, openai);
 
@@ -104,7 +104,7 @@ export async function setupMessageHandlers(bot, openai) {
         if (msg.text && msg.text.toLowerCase().split(' ').some(word => word.endsWith('pump'))) {
           return;
         }
-        
+
         // Check for X.com status URLs
         if (msg.text && xPostCapture.isXStatusUrl(msg.text)) {
           try {
@@ -236,57 +236,58 @@ async function processNextMessage(bot, openai, chatId) {
         .toArray();
 
       if (!lastMessage.length || lastMessage[0].role === 'assistant') {
-        return { continue: false };
+        return;
       }
 
-      const response = await handleText(chatId, openai, bot);
-      
-      // Handle null response case explicitly
-      if (!response) {
-        return { continue: false };
-      }
+      const processLoop = async (remainingCycles = 3) => {
+        if (remainingCycles <= 0) return;
 
-      // Store assistant's response in MongoDB before sending
-      await mongoDBService.getCollection("messages").insertOne({
-        chatId,
-        content: [{ type: 'text', text: response.text, imageUrl: response.imageUrl }],
-        role: 'assistant',
-        timestamp: Date.now()
-      });
+        const response = await handleText(chatId, openai, bot);
+        // Store assistant's response in MongoDB before sending
+        await mongoDBService.getCollection("messages").insertOne({
+          chatId,
+          content: [{ type: 'text', text: response.text, imageUrl: response.imageUrl }],
+          role: 'assistant',
+          timestamp: Date.now()
+        });
 
-      // Handle media responses
-      if (response.filePath) {
-        const ext = response.filePath.split('.').pop().toLowerCase();
-        try {
-          if (ext === 'gif') {
-            await sendGif(bot, chatId, response.imageUrl);
-          } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
-            await sendImage(bot, chatId, response.imageUrl);
+        // Handle media responses
+        if (response.filePath) {
+          const ext = response.filePath.split('.').pop().toLowerCase();
+          try {
+            if (ext === 'gif') {
+              await sendGif(bot, chatId, response.imageUrl);
+            } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+              await sendImage(bot, chatId, response.imageUrl);
+            }
+          } catch (error) {
+            console.error(`Failed to send media: ${error.message}`);
+            // Continue with text message even if media fails
           }
-        } catch (error) {
-          console.error(`Failed to send media: ${error.message}`);
-          // Continue with text message even if media fails
         }
-      }
 
-      // Only send text message if it exists
-      if (response.text) {
-        await sendTextMessage(bot, chatId, response.text);
-      }
-      
+        // Only send text message if it exists
+        if (response.text) {
+          await sendTextMessage(bot, chatId, response.text);
+        }
+
+        if (response.continue) {
+          return processLoop(remainingCycles - 1);
+        }
+      };
+
+      await processLoop();
+
       // Reset circuit breaker on success
       resetCircuitBreaker();
       consecutiveErrors = 0;  // Reset consecutive errors on success
-      
-      return { continue: true, response };  // Added consistent return with response
-
     } catch (error) {
       lastError = error;
-      
+
       if (handleError(error, chatId)) {
         circuitBreaker.failures++;
         circuitBreaker.lastFailure = Date.now();
-        
+
         if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
           circuitBreaker.isOpen = true;
           console.error('Circuit breaker opened due to persistent connection failures');
@@ -299,7 +300,7 @@ async function processNextMessage(bot, openai, chatId) {
           return await attempt();
         }
       }
-      
+
       throw error;
     }
   };
@@ -334,20 +335,11 @@ async function startMessageProcessing(bot, openai) {
       console.warn('Circuit breaker is open, skipping processing cycle');
     } else {
       const chats = messageQueue.getAllChats();
-      
+
       for (const chatId of chats) {
         try {
-          const processLoop = async (remainingCycles = 3) => {
-            if (remainingCycles <= 0) return;
-            
-            const result = await processNextMessage(bot, openai, chatId);
-            
-            if (result && result.continue) {
-              return processLoop(remainingCycles - 1);
-            }
-          };
+          await processNextMessage(bot, openai, chatId);
 
-          await processLoop();
           messageQueue.removeMessage(chatId);  // Remove processed message
 
         } catch (error) {
@@ -364,10 +356,10 @@ async function startMessageProcessing(bot, openai) {
         }
       }
     }
-    
+
     processingInterval = setTimeout(async () => await process(), CONFIG.BOT.POLLING_INTERVAL || 33333);
   }
-  
+
   processingInterval = setTimeout(async () => await process(), 1000);
 }
 

@@ -219,7 +219,7 @@ export async function handleText(chatId, openai, bot) {
 async function fallbackResponse(chatId, bot, errorMessage = null) {
     const fallbackMessage = "Hiss... Something went wrong. Let's just wait for next time 🐍";
     console.error(`[fallbackResponse] ${errorMessage || "No error message provided."}`);
-    return { text: fallbackMessage };
+    return { text: fallbackMessage, continue: false };
 }
 
 async function handleSpeak(chatId, content) {
@@ -234,19 +234,23 @@ async function handleThink(chatId, thinkingContent) {
     await updateMemory([
         { username: 'BobTheSnake', role: 'assistant_thinking', content: thinkingContent }
     ]);
-    return { text: `[🧠 Memory generated: ${thinkingContent}]`, continue: true };
+    return { text: `[🧠 Memory generated]`, continue: true };
 }
 
 async function handleImagine(chatId, message) {
+    const openai = createOpenAIClient();
     console.log('[handleImagine] Generating an image...');
     try {
         const { buffer, type } = await MediaService.generateMediaBuffer(message);
+        await XService.maybePostImage(
+            buffer, openai, message, type
+        )
         const filePath = await MediaService.saveMediaLocally(buffer, type);
         const imageUrl = await MediaService.uploadMediaToS3(filePath);
         return { text: "🖼️ Meme Generated: " + message, imageUrl, filePath, continue: true };
     } catch (error) {
         console.error('[handleImagine] Failed to generate image:', error);
-        return { text: "Hiss... I couldn't imagine an image this time." };
+        return { text: "Hiss... I couldn't imagine an image this time.", continue: false };
     }
 }
 // ----------------------------------------------------
