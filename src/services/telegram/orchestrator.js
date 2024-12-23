@@ -16,12 +16,12 @@ import {
 // Action definitions with configurable timeouts and handlers
 const ACTIONS = {
     speak: {
-        timeout: 1 * 60 * 1000, // 1 minute
+        timeout: 3 * 10 * 1000, // 30 seconds
         description: "Say something relevant to the conversation",
         handler: handleSpeak,
     },
     think: {
-        timeout: 5 * 60 * 1000, // 5 minutes
+        timeout: 15 * 60 * 1000, // 5 minutes
         description: "Reflect on the context and add a persistent thought",
         handler: handleThink,
     },
@@ -155,7 +155,7 @@ export async function handleText(chatId, openai, bot) {
 
         // Example of inlined logic (no separate function)
         let action, message;
-        const maxRetries = 3;
+        const maxRetries = 5;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -234,16 +234,17 @@ async function handleThink(chatId, thinkingContent) {
     await updateMemory([
         { username: 'BobTheSnake', role: 'assistant_thinking', content: thinkingContent }
     ]);
-    return { text: `[🧠 Memory generated]`, continue: true };
+    return { text: `[[🧠 Memory generated]]`, continue: true };
 }
 
+
+  
 async function handleImagine(chatId, message) {
-    const openai = createOpenAIClient();
     console.log('[handleImagine] Generating an image...');
     try {
         const { buffer, type } = await MediaService.generateMediaBuffer(message);
         await XService.maybePostImage(
-            buffer, openai, message, type
+            buffer, message, type
         )
         const filePath = await MediaService.saveMediaLocally(buffer, type);
         const imageUrl = await MediaService.uploadMediaToS3(filePath);

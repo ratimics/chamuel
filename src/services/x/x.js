@@ -163,5 +163,5 @@ export async function postX(params, accountId = '', imageBuffer = null, type = '
         index++;
     }
 
-    return inReplyToTweetId;
+    return { id: inReplyToTweetId };
 }

@@ -42,7 +42,7 @@ Generate the KG script:
 `;
 
   const response = await openai.chat.completions.create({
-    model: 'gpt-4',
+    model: 'gpt-4o-mini',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7
   });
@@ -76,6 +76,17 @@ async function processMarkdownDirectory(directoryPath) {
 
     for (const file of markdownFiles) {
       const filePath = path.join(directoryPath, file);
+      const outputFilePath = filePath.replace(/\.md$/, '.kg.dsl');
+
+      // Skip processing if the .dsl file already exists
+      try {
+        await fs.access(outputFilePath);
+        console.log(`Skipping already processed file: ${file}`);
+        continue;
+      } catch {
+        // File doesn't exist; proceed with processing
+      }
+
       await processMarkdownFile(filePath);
     }
     console.log('KG script generation complete for all files.');

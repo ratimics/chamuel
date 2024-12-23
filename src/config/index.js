@@ -64,7 +64,7 @@ export const CONFIG = {
       "black-forest-labs/flux-dev": "A funny meme, signed by \"Bob the Snake\"",
       "immanencer/bobthesnek": "SNEK A funny meme, signed by \"Bob the Snake\""
     },
-    VIDEO_PROBABILITY: 0.2,
+    VIDEO_PROBABILITY: 1,
     IMAGE_CACHE_SIZE: 1000, // Maximum number of cached image descriptions
     REQUEST_TIMEOUT: 30000,
     MAX_RETRIES: 3,

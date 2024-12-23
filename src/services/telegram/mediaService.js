@@ -44,7 +44,7 @@ export class MediaService {
             // Generate video using Replicate
             const output = await replicate.run("minimax/video-01-live", {
                 input: { 
-                    prompt: "best quality, 4k, HDR, SNEK " + prompt,
+                    prompt: "best quality, 4k, HDR, " + prompt + "\n\nDynamic video with camera motion and lots of action" ,
                     first_frame_image
                  }
             });
