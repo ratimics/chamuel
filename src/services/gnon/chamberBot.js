@@ -1,9 +1,9 @@
-// gnonBot.js
-import { GNONService } from "./services/gnon/gnonService.js";
-import { updateMemory } from "./services/memory/memoryService.js";
-import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "./config/index.js";
+import OpenAI from "openai";
+import { ChamberService } from "./chamberService.js";
+import { updateMemory } from "../memory/memoryService.js";
+import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 
-// Action definitions for GNON bot
+// Action definitions
 const ACTIONS = {
     speak: {
         timeout: 3 * 10 * 1000, // 30 seconds
@@ -22,7 +22,7 @@ const ACTIONS = {
     },
 };
 
-// In-memory state management
+// State management
 const state = {
     timers: {},
     lastActionTimes: {},
@@ -45,7 +45,6 @@ function updateActionTimestamp(actionName) {
     state.lastActionTimes[actionName] = Date.now();
 }
 
-// Modify the generateStructuredPrompt function
 function generateStructuredPrompt() {
     const availableActions = Object.entries(ACTIONS)
         .filter(([name]) => isActionAllowed(name))
@@ -64,15 +63,21 @@ function generateStructuredPrompt() {
     `;
 }
 
-async function handleSpeak(roomName, content, gnonService) {
+async function handleSpeak(roomName, content, chamberService) {
     console.log("[handleSpeak] Sending response:", content);
-    await gnonService.sendMessage(roomName, content);
+    await chamberService.sendMessage(roomName, {
+        username: "BobTheSnake",
+        content: content,
+    });
     return { text: content, continue: true };
 }
 
-async function handleThink(roomName, thinkingContent, gnonService) {
+async function handleThink(roomName, thinkingContent, chamberService) {
     console.log("[handleThink] Storing reflection:", thinkingContent);
-    await gnonService.sendMessage(roomName, `🤔 ${thinkingContent}`);
+    await chamberService.sendMessage(roomName, {
+        username: "BobTheSnake",
+        content: `🤔 ${thinkingContent}`,
+    });
     await updateMemory([
         {
             username: "BobTheSnake",
@@ -83,21 +88,24 @@ async function handleThink(roomName, thinkingContent, gnonService) {
     return { continue: true };
 }
 
-async function handleWait(roomName, content, gnonService) {
+async function handleWait(roomName, content, chamberService) {
     console.log("[handleWait] Sending wait response:", content);
-    await gnonService.sendMessage(roomName, content);
+    await chamberService.sendMessage(roomName, {
+        username: "BobTheSnake",
+        content: content,
+    });
     return { continue: false };
 }
 
-async function handleMessage(roomName, messages, openai, gnonService) {
+function formatMessagesForContext(messages) {
+    return messages.map((msg) => `${msg.username}: ${msg.content}`).join("\n");
+}
+
+async function handleMessage(roomName, messages, openai, chamberService) {
     try {
-        // Generate dynamic prompt based on available actions
         const structuredPrompt = generateStructuredPrompt();
+        const context = formatMessagesForContext(messages);
 
-        // Format recent messages for context
-        const context = gnonService.formatMessagesForContext(messages);
-
-        // Request structured output for decision-making
         const response = await openai.chat.completions.create({
             model: "nousresearch/hermes-3-llama-3.1-405b",
             messages: [
@@ -121,7 +129,7 @@ async function handleMessage(roomName, messages, openai, gnonService) {
             return await handleSpeak(
                 roomName,
                 `Hiss... I need to wait a bit before I can ${parsed.action} again.`,
-                gnonService,
+                chamberService,
             );
         }
 
@@ -129,47 +137,60 @@ async function handleMessage(roomName, messages, openai, gnonService) {
         return await ACTIONS[parsed.action].handler(
             roomName,
             parsed.message,
-            gnonService,
+            chamberService,
         );
     } catch (error) {
         console.error("[handleMessage] Error:", error);
         return await handleSpeak(
             roomName,
             "Hiss... Something went wrong. Let me slither back in a moment! 🐍",
-            gnonService,
+            chamberService,
         );
     }
 }
 
 export async function initialize() {
-    const gnonService = new GNONService({
-        ECHO_CHAMBERS_URL: process.env.ECHO_CHAMBERS_URL,
-        ECHO_CHAMBERS_API_KEY: process.env.ECHO_CHAMBERS_API_KEY,
-        AGENT_USERNAME: "BobTheSnake",
-        AGENT_MODEL: "gpt-4",
-        MIN_MESSAGE_DELAY: 30000,
-        MAX_MESSAGES_PER_HOUR: 120,
-    });
+    // Initialize ChamberService
+    const chamberService = new ChamberService(
+        process.env.ECHOCHAMBER_API_URL,
+        process.env.ECHOCHAMBER_API_KEY,
+    );
+
+    // Verify connection
+    await chamberService.verifyConnection();
 
     const openai = new OpenAI({
+        baseURL: process.env.OPENAI_API_URL,
         apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Join initial room
-    const cleanup = await gnonService.joinRoom("general", async (messages) => {
-        if (messages.length > 0) {
-            await handleMessage("general", messages, openai, gnonService);
-        }
+    // Create room if it doesn't exist
+    await chamberService.createRoom({
+        name: "serpent-pit",
+        description: "Welcome to the serpent pit.",
+        tags: ["serpent", "pit"],
     });
+
+    // Subscribe to messages
+    const unsubscribe = chamberService.subscribe(
+        "serpent-pit",
+        async (message) => {
+            await handleMessage("general", [message], openai, chamberService);
+        },
+    );
 
     // Handle cleanup on process exit
     process.on("SIGINT", () => {
-        cleanup();
+        unsubscribe();
+        chamberService.cleanup();
         process.exit(0);
     });
 
     return {
-        gnonService,
-        cleanup,
+        chamberService,
+        cleanup: () => {
+            unsubscribe();
+            chamberService.cleanup();
+        },
     };
 }

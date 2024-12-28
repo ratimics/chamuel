@@ -1,4 +1,4 @@
-import { initialize } from './services/telegram/bot.js';
+import { initialize } from './services/gnon/chamberBot.js';
 import { ensureDirectories } from './setup.js';
 
 async function startBot() {
