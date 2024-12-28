@@ -1,5 +1,7 @@
 import { MongoClient } from 'mongodb';
 
+const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'chat_analyzer';
+
 export class ChannelAnalyzer {
     constructor(mongoUrl) {
         this.mongoUrl = mongoUrl;
@@ -11,7 +13,7 @@ export class ChannelAnalyzer {
     async connect() {
         try {
             await this.client.connect();
-            this.db = this.client.db('chamber_analysis');
+            this.db = this.client.db(MONGODB_DB_NAME);
             
             // Test connection and permissions
             await this.db.command({ ping: 1 });

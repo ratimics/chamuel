@@ -7,8 +7,18 @@ import { processLLMResponse, formatMessagesForContext, generateStructuredPrompt 
 import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 
 const CHANNEL_CHECK_INTERVAL = 5 * 60 * 1000;
+const HOME_CHANNEL_CHECK_INTERVAL = 10 * 1000;  // 10 seconds
+const CHANNEL_INACTIVITY_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours
+const MENTION_MONITORING_PERIOD = 24 * 60 * 60 * 1000; // 24 hours
+const HOME_CHANNEL = "serpent-pit";
 const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
-const state = { lastActionTimes: {} };
+const state = { 
+    lastActionTimes: {},
+    currentChannel: null,
+    lastChannelActivity: {},
+    recentMentions: new Set(),
+    lastMentionTimes: {}
+};
 
 async function handleMessage(roomName, messages, openai, chamberService) {
     try {
@@ -124,6 +134,56 @@ async function exploreChannels(channelManager, openai, chamberService) {
     }
 }
 
+async function checkForMentions(messages) {
+    const mentions = messages.some(msg => 
+        msg.content.toLowerCase().includes('bob') || 
+        msg.content.toLowerCase().includes('snake')
+    );
+    
+    if (mentions) {
+        state.recentMentions.add(messages[0].channelName);
+        state.lastMentionTimes[messages[0].channelName] = Date.now();
+    }
+}
+
+async function shouldSwitchChannel(channelName) {
+    const lastActivity = state.lastChannelActivity[channelName] || 0;
+    return Date.now() - lastActivity > CHANNEL_INACTIVITY_THRESHOLD;
+}
+
+async function selectNextChannel(channelManager) {
+    // Clean up old mentions
+    for (const [channel, lastMention] of Object.entries(state.lastMentionTimes)) {
+        if (Date.now() - lastMention > MENTION_MONITORING_PERIOD) {
+            state.recentMentions.delete(channel);
+            delete state.lastMentionTimes[channel];
+        }
+    }
+
+    // If current channel is still active, stay there
+    if (state.currentChannel && !await shouldSwitchChannel(state.currentChannel)) {
+        return state.currentChannel;
+    }
+
+    // Check mentioned channels first
+    for (const channel of state.recentMentions) {
+        if (channel !== HOME_CHANNEL && channel !== state.currentChannel) {
+            return channel;
+        }
+    }
+
+    // Get a new unvisited channel
+    const newChannel = await channelManager.getUnvisitedChannel();
+    if (newChannel) {
+        state.currentChannel = newChannel;
+        state.lastChannelActivity[newChannel] = Date.now();
+        return newChannel;
+    }
+
+    // Fallback to random channel
+    return await channelManager.selectRandomChannel(HOME_CHANNEL);
+}
+
 export async function initialize() {
     const chamberService = new ChamberService(
         process.env.ECHOCHAMBER_API_URL,
@@ -137,49 +197,86 @@ export async function initialize() {
         apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const analyzer = new ChannelAnalyzer(process.env.BOT_DB_URI);
+    const analyzer = new ChannelAnalyzer(process.env.MONGODB_URI);
     await analyzer.connect();
 
     const channelManager = new ChannelManager(chamberService, analyzer, openai);
 
     // Initialize home channel
     await chamberService.createRoom({
-        name: "serpent-pit",
+        name: HOME_CHANNEL,
         description: "Welcome to the serpent pit.",
         tags: ["serpent", "pit"],
     });
 
-    // Send startup messages to both serpent-pit and general
+    // Send startup messages
     try {
-        // Serpent-pit startup
-        const startupMessage = await generateStartupMessage(openai, "serpent-pit");
-        await chamberService.sendMessage("serpent-pit", {
-            sender: { model: "ratichat", username: "BobTheSnake" },
+        // Home channel startup
+        const startupMessage = await generateStartupMessage(openai, HOME_CHANNEL);
+        await chamberService.sendMessage(HOME_CHANNEL, {
+            sender: { model: LLM_MODEL, username: "BobTheSnake" },
             content: startupMessage
         });
 
         // General channel startup
         const generalStartup = await generateStartupMessage(openai, "general");
         await chamberService.sendMessage("general", {
-            sender: { model: "ratichat", username: "BobTheSnake" },
+            sender: { model: LLM_MODEL, username: "BobTheSnake" },
             content: generalStartup
         });
 
-        console.log("[initialize] Sent startup messages to serpent-pit and general");
+        console.log("[initialize] Sent startup messages to home channel and general");
     } catch (error) {
         console.error("[initialize] Failed to send startup messages:", error);
     }
 
+    // Set up dedicated monitoring for home channel
+    await channelManager.subscribeToChannel(
+        HOME_CHANNEL,
+        async (channelName, messages) => await handleMessage(channelName, messages, openai, chamberService)
+    );
+
+    // Refresh home channel subscription periodically to ensure we don't miss messages
+    setInterval(async () => {
+        await channelManager.subscribeToChannel(
+            HOME_CHANNEL,
+            async (channelName, messages) => await handleMessage(channelName, messages, openai, chamberService)
+        );
+    }, HOME_CHANNEL_CHECK_INTERVAL);
+
     // Start channel exploration cycle
     await exploreChannels(channelManager, openai, chamberService);
 
-    // Start channel rotation
+    // Start channel rotation for non-home channels
     setInterval(async () => {
-        const randomChannel = await channelManager.selectRandomChannel();
-        await channelManager.subscribeToChannel(
-            randomChannel,
-            async (channelName, messages) => await handleMessage(channelName, messages, openai, chamberService)
-        );
+        const nextChannel = await selectNextChannel(channelManager);
+        if (nextChannel && nextChannel !== state.currentChannel) {
+            console.log(`[rotate] Moving to channel: ${nextChannel}`);
+            
+            // Subscribe to the new channel
+            await channelManager.subscribeToChannel(
+                nextChannel,
+                async (channelName, messages) => {
+                    // Update activity timestamp
+                    state.lastChannelActivity[channelName] = Date.now();
+                    
+                    // Check for mentions in all messages
+                    await checkForMentions(messages);
+                    
+                    // Only respond if it's the current active channel or if mentioned
+                    if (channelName === state.currentChannel || state.recentMentions.has(channelName)) {
+                        await handleMessage(channelName, messages, openai, chamberService);
+                    }
+                }
+            );
+            
+            // Send entrance message for new channel
+            const message = await generateStartupMessage(openai, nextChannel);
+            await chamberService.sendMessage(nextChannel, {
+                sender: { model: LLM_MODEL, username: "BobTheSnake" },
+                content: message
+            });
+        }
     }, CHANNEL_CHECK_INTERVAL);
 
     const cleanup = () => {
