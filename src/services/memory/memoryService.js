@@ -4,14 +4,21 @@ import OpenAI from 'openai';
 import { MetaplexStorageService } from '../storage/metaplexStorage.js';
 import { getWallet } from '../../config/wallet.js';
 import { retry } from '../../utils/retry.js';
+import path from 'path';
+import { processMarkdownFile } from '../../kgGenerator.js';
 
 const MEMORY_FILE = './memory.md';
+const MEMORY_DIR = './memories';
+const MEMORY_STATE_FILE = path.join(MEMORY_DIR, 'memory_state.json');
 const MEMORY_SUMMARY_PROMPT = `You are Bob the Snake's memory processor. 
 Combine the previous memory and new conversations into a cohesive summary of Bob's experiences. 
 Focus on key interactions, emotional moments, and important relationships.
 Write in first person from Bob's perspective.
 Keep the tone casual but introspective.
 Maximum length: ${CONFIG.MAX_SUMMARY_LENGTH} characters.`;
+
+// Track memory generation state
+let lastMemoryDate = null;
 
 function createOpenAIClient() {
   return new OpenAI({
@@ -22,6 +29,33 @@ function createOpenAIClient() {
       'X-Title': process.env.YOUR_SITE_NAME
     }
   });
+}
+
+async function loadMemoryState() {
+  try {
+    const data = await fs.readFile(MEMORY_STATE_FILE, 'utf-8');
+    const state = JSON.parse(data);
+    lastMemoryDate = new Date(state.lastMemoryDate);
+  } catch (error) {
+    lastMemoryDate = new Date(0); // Set to epoch if no state exists
+  }
+}
+
+async function saveMemoryState() {
+  const state = {
+    lastMemoryDate: lastMemoryDate.toISOString()
+  };
+  await fs.writeFile(MEMORY_STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+async function shouldGenerateMemory() {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (!lastMemoryDate || lastMemoryDate < today) {
+    return true;
+  }
+  return false;
 }
 
 export async function summarizeMemory(previousMemory, recentMessages) {
@@ -119,53 +153,40 @@ async function getLastUpdateDate() {
  */
 export async function updateMemory(recentMessages) {
   try {
-    const lastUpdateDate = await getLastUpdateDate();
-    const now = new Date();
+    // Load existing state
+    await loadMemoryState();
 
-    // If memory was updated in the last 24 hours, skip
-    if (lastUpdateDate && now - lastUpdateDate < 24 * 60 * 60 * 1000) {
-      console.log(`Memory was updated less than 24 hours ago. Skipping update.`);
-      return {
-        memory: memory,
-        nftAddress: null
-      };
+    // Check if we should generate a new memory
+    if (!await shouldGenerateMemory()) {
+      console.log('[updateMemory] Daily memory already generated, skipping...');
+      return;
     }
 
-    // Attempt to read existing memory file
-    let previousMemory = '';
-    try {
-      previousMemory = await fs.readFile(MEMORY_FILE, 'utf-8');
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
+    // Ensure memory directory exists
+    await fs.mkdir(MEMORY_DIR, { recursive: true });
 
-    // Summarize memory and produce new memory content
-    const newMemory = await summarizeMemory(previousMemory, recentMessages);
+    // Generate memory filename with timestamp
+    const timestamp = new Date().toISOString().split('T')[0];
+    const memoryFile = path.join(MEMORY_DIR, `memory_${timestamp}.md`);
 
-    // Prepare final memory content with timestamp
-    // Note: we store the exact current ISO string in the // Generated at: line
-    const currentTimeISO = now.toISOString(); // e.g. 2024-01-01T12:00:00.000Z
-    const memoryWithTimestamp = `// Generated at: ${currentTimeISO}\n\n${newMemory}`;
+    // Format messages into markdown
+    const markdown = recentMessages
+      .map(msg => `## ${msg.sender.username}\n${msg.content}\n`)
+      .join('\n');
 
-    // Write to main memory file
-    await fs.writeFile(MEMORY_FILE, memoryWithTimestamp);
+    // Write memory file
+    await fs.writeFile(memoryFile, markdown);
 
-    // Save a timestamped version in ./memories/
-    const safeTimestamp = currentTimeISO.replace(/[:.]/g, '-');
-    await fs.writeFile(
-      `./memories/memory-${safeTimestamp}.md`,
-      memoryWithTimestamp
-    );
+    // Generate KG DSL from the memory
+    await processMarkdownFile(memoryFile);
 
-    // Publish to Solana if enabled
-    const nftAddress = await publishMemoryToSolana(newMemory, currentTimeISO);
+    // Update last memory date
+    lastMemoryDate = new Date();
+    await saveMemoryState();
 
-    // Store in the global memory variable
-    memory = newMemory;
-
-    return { memory: newMemory, nftAddress };
+    console.log(`[updateMemory] Generated new memory and KG DSL: ${memoryFile}`);
   } catch (error) {
-    console.error('Error updating memory:', error);
+    console.error('[updateMemory] Error updating memory:', error);
     throw error;
   }
 }

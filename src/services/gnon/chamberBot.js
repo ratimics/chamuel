@@ -1,162 +1,117 @@
 import OpenAI from "openai";
 import { ChamberService } from "./chamberService.js";
-import { updateMemory } from "../memory/memoryService.js";
+import { ChannelAnalyzer } from '../analysis/channelAnalyzer.js';
+import { ChannelManager } from './channels/channelManager.js';
+import { ACTIONS } from './actions/handlers.js';
+import { processLLMResponse, formatMessagesForContext, generateStructuredPrompt } from './llm/messageProcessor.js';
 import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 
-// Action definitions
-const ACTIONS = {
-    speak: {
-        timeout: 3 * 10 * 1000, // 30 seconds
-        description: "Say something relevant to the conversation",
-        handler: handleSpeak,
-    },
-    think: {
-        timeout: 15 * 60 * 1000, // 15 minutes
-        description: "Reflect on the context and add a persistent thought",
-        handler: handleThink,
-    },
-    wait: {
-        timeout: 30 * 1000, // 30 seconds
-        description: "Pause and wait for someone else to contribute",
-        handler: handleWait,
-    },
-};
-
-// State management
-const state = {
-    timers: {},
-    lastActionTimes: {},
-};
-
-function isActionAllowed(actionName) {
-    const now = Date.now();
-    const lastUsed = state.lastActionTimes[actionName] || 0;
-    const action = ACTIONS[actionName];
-
-    if (!action) {
-        console.warn(`[isActionAllowed] Unknown action: ${actionName}`);
-        return false;
-    }
-
-    return now - lastUsed > action.timeout;
-}
-
-function updateActionTimestamp(actionName) {
-    state.lastActionTimes[actionName] = Date.now();
-}
-
-function generateStructuredPrompt() {
-    const availableActions = Object.entries(ACTIONS)
-        .filter(([name]) => isActionAllowed(name))
-        .map(([name, config]) => `- ${name}: ${config.description}`);
-
-    return `
-    ${SYSTEM_PROMPT}
-
-    Currently available actions:
-    ${availableActions.join("\n")}
-
-    Choose what you want to do, and provide the relevant message. 
-    Only choose from the currently available actions listed above.
-
-    Always pick the action that fits best with the given context. Respond in a structured JSON format adhering strictly to the schema.
-    `;
-}
-
-async function handleSpeak(roomName, content, chamberService) {
-    console.log("[handleSpeak] Sending response:", content);
-    await chamberService.sendMessage(roomName, {
-        sender: "BobTheSnake",
-        content: content,
-    });
-    return { text: content, continue: true };
-}
-
-async function handleThink(roomName, thinkingContent, chamberService) {
-    console.log("[handleThink] Storing reflection:", thinkingContent);
-    await chamberService.sendMessage(roomName, {
-        sender: "BobTheSnake",
-        content: `🤔 ${thinkingContent}`,
-    });
-    await updateMemory([
-        {
-            sender: "BobTheSnake",
-            role: "assistant_thinking",
-            content: thinkingContent,
-        },
-    ]);
-    return { continue: true };
-}
-
-async function handleWait(roomName, content, chamberService) {
-    console.log("[handleWait] Sending wait response:", content);
-    await chamberService.sendMessage(roomName, {
-        sender: "BobTheSnake",
-        content: content,
-    });
-    return { continue: false };
-}
-
-function formatMessagesForContext(messages) {
-    return messages.map((msg) => `${msg.username}: ${msg.content}`).join("\n");
-}
+const CHANNEL_CHECK_INTERVAL = 5 * 60 * 1000;
+const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
+const state = { lastActionTimes: {} };
 
 async function handleMessage(roomName, messages, openai, chamberService) {
     try {
-        const structuredPrompt = generateStructuredPrompt();
         const context = formatMessagesForContext(messages);
+        const enhancedContext = `
+Channel Context:
+${JSON.stringify(messages[0].channelContext, null, 2)}
 
-        const response = await openai.chat.completions.create({
-            model: "nousresearch/hermes-3-llama-3.1-405b",
-            messages: [
-                { role: "system", content: structuredPrompt },
-                { role: "user", content: context },
-                { role: "user", content: RESPONSE_INSTRUCTIONS },
-            ],
-            response_format: { type: "json_object" },
-            temperature: 0.8,
-        });
+Entity Context:
+${JSON.stringify(messages[0].entityProfile, null, 2)}
 
-        const parsed = JSON.parse(
-            response.choices[0]?.message?.content || "{}",
+Recent Messages:
+${context}
+`;
+
+        const parsed = await processLLMResponse(
+            openai, 
+            enhancedContext, 
+            SYSTEM_PROMPT,
+            generateStructuredPrompt(RESPONSE_INSTRUCTIONS, state.lastActionTimes)
         );
 
-        if (!parsed.action || !ACTIONS[parsed.action]) {
-            throw new Error("Invalid response format");
-        }
-
-        if (!isActionAllowed(parsed.action)) {
-            return await handleSpeak(
-                roomName,
-                `Hiss... I need to wait a bit before I can ${parsed.action} again.`,
-                chamberService,
-            );
-        }
-
-        updateActionTimestamp(parsed.action);
-        return await ACTIONS[parsed.action].handler(
-            roomName,
-            parsed.message,
-            chamberService,
-        );
+        if (!ACTIONS[parsed.action]) return;
+        
+        state.lastActionTimes[parsed.action] = Date.now();
+        return ACTIONS[parsed.action].handler(roomName, parsed.message, chamberService);
     } catch (error) {
         console.error("[handleMessage] Error:", error);
-        return await handleSpeak(
+        return ACTIONS.speak.handler(
             roomName,
             "Hiss... Something went wrong. Let me slither back in a moment! 🐍",
-            chamberService,
+            chamberService
         );
+    }
+}
+
+async function generateStartupMessage(openai) {
+    try {
+        return await processLLMResponse(
+            openai,
+            "You are Bob the Snake, coming online in your home channel 'serpent-pit'. Generate a friendly startup message announcing your presence and intention to explore all the channels. Keep it snake-themed and friendly!",
+            SYSTEM_PROMPT,
+            null,
+            false // Don't require JSON
+        );
+    } catch (error) {
+        console.error("[generateStartupMessage] Error:", error);
+        return "🐍 *slithers in quietly* Having some technical issues, but I'm here!";
+    }
+}
+
+async function exploreChannels(channelManager, openai, chamberService) {
+    try {
+        const channelName = await channelManager.getUnvisitedChannel();
+        if (!channelName) {
+            console.warn("[explore] No channel available, retrying in 5 minutes");
+            setTimeout(() => exploreChannels(channelManager, openai, chamberService), 5 * 60 * 1000);
+            return;
+        }
+        
+        let channelContext = {};
+        let entityProfiles = [];
+        
+        try {
+            channelContext = await channelManager.analyzer.getChannelContext(channelName);
+            entityProfiles = await channelManager.analyzer.getRecentEntityProfiles(channelName);
+        } catch (dbError) {
+            console.warn("[explore] Database access error:", dbError.message);
+        }
+
+        const message = await processLLMResponse(
+            openai,
+            `You're entering a new channel: ${channelName}\n\nChannel Context: ${JSON.stringify(channelContext)}`,
+            SYSTEM_PROMPT,
+            null,
+            false // Don't require JSON
+        );
+
+        await chamberService.sendMessage(channelName, {
+            sender: { model: LLM_MODEL, username: "BobTheSnake" },
+            content: message
+        }).catch(error => {
+            console.warn("[explore] Failed to send message to channel:", error.message);
+        });
+        
+        channelManager.markChannelVisited(channelName);
+        console.log(`[explore] Visited channel ${channelName}`);
+
+        // Schedule next exploration with randomized delay between 2-3 minutes
+        const delay = 2 * 60 * 1000 + Math.random() * 60 * 1000;
+        setTimeout(() => exploreChannels(channelManager, openai, chamberService), delay);
+    } catch (error) {
+        console.error("[explore] Channel exploration error:", error);
+        setTimeout(() => exploreChannels(channelManager, openai, chamberService), 5 * 60 * 1000);
     }
 }
 
 export async function initialize() {
-    // Initialize ChamberService
     const chamberService = new ChamberService(
         process.env.ECHOCHAMBER_API_URL,
-        process.env.ECHOCHAMBER_API_KEY,
+        process.env.ECHOCHAMBER_API_KEY
     );
 
-    // Verify connection
     await chamberService.verifyConnection();
 
     const openai = new OpenAI({
@@ -164,33 +119,48 @@ export async function initialize() {
         apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Create room if it doesn't exist
+    const analyzer = new ChannelAnalyzer(process.env.BOT_DB_URI);
+    await analyzer.connect();
+
+    const channelManager = new ChannelManager(chamberService, analyzer, openai);
+
+    // Initialize home channel
     await chamberService.createRoom({
         name: "serpent-pit",
         description: "Welcome to the serpent pit.",
         tags: ["serpent", "pit"],
     });
 
-    // Subscribe to messages
-    const unsubscribe = chamberService.subscribe(
-        "serpent-pit",
-        async (message) => {
-            await handleMessage("serpent-pit", [message], openai, chamberService);
-        },
-    );
+    // Send startup message
+    try {
+        const startupMessage = await generateStartupMessage(openai);
+        await chamberService.sendMessage("serpent-pit", {
+            sender: { model: LLM_MODEL, username: "BobTheSnake" },
+            content: startupMessage
+        });
+        console.log("[initialize] Sent startup message to serpent-pit");
+    } catch (error) {
+        console.error("[initialize] Failed to send startup message:", error);
+    }
 
-    // Handle cleanup on process exit
-    process.on("SIGINT", () => {
-        unsubscribe();
+    // Start channel exploration cycle
+    await exploreChannels(channelManager, openai, chamberService);
+
+    // Start channel rotation
+    setInterval(async () => {
+        const randomChannel = await channelManager.selectRandomChannel();
+        await channelManager.subscribeToChannel(
+            randomChannel,
+            async (channelName, messages) => await handleMessage(channelName, messages, openai, chamberService)
+        );
+    }, CHANNEL_CHECK_INTERVAL);
+
+    const cleanup = () => {
+        channelManager.cleanup();
         chamberService.cleanup();
-        process.exit(0);
-    });
-
-    return {
-        chamberService,
-        cleanup: () => {
-            unsubscribe();
-            chamberService.cleanup();
-        },
+        analyzer.close();
     };
+
+    process.on("SIGINT", cleanup);
+    return { chamberService, cleanup };
 }

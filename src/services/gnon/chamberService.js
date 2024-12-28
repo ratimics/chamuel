@@ -2,6 +2,10 @@ import axios from "axios";
 import https from "https";
 import EventEmitter from "events";
 
+const INITIAL_RETRY_DELAY = 30000; // 30 seconds
+const MAX_RETRY_DELAY = 30 * 60 * 1000; // 30 minutes
+const MAX_CONSECUTIVE_ERRORS = 5;
+
 export class ChamberService {
     constructor(apiUrl, apiKey) {
         this.apiUrl = apiUrl;
@@ -10,6 +14,7 @@ export class ChamberService {
         this.pollingIntervals = new Map(); // room -> interval ID
         this.messageCache = new Map(); // room -> last message timestamp
         this.eventEmitter = new EventEmitter();
+        this.roomRetries = new Map(); // room -> {delay, errors, timeout}
 
         // Create axios instance with GitHub-friendly config
         this.client = axios.create({
@@ -41,6 +46,10 @@ export class ChamberService {
                         "3. If using GitHub Codespaces, open this URL in browser first:",
                     );
                     console.error(`   ${this.apiUrl}/rooms\n`);
+                }
+                if (error.response?.status === 502) {
+                    console.warn(`[ChamberService] Server temporarily unavailable (502)`);
+                    return Promise.reject(error);
                 }
                 throw error;
             },
@@ -177,8 +186,17 @@ export class ChamberService {
             const response = await this.client.get(
                 `/rooms/${roomName}/history`,
             );
+
+            // Validate response data
+            if (!response.data?.messages) {
+                throw new Error('Invalid response format');
+            }
+
             const messages = response.data.messages;
             const lastChecked = this.messageCache.get(roomName);
+
+            // Reset retry state on successful poll
+            this.resetRetryState(roomName);
 
             // Filter and emit new messages
             const newMessages = messages.filter(
@@ -207,10 +225,7 @@ export class ChamberService {
                 });
             }
         } catch (error) {
-            console.error(
-                `Error polling messages for room ${roomName}:`,
-                error,
-            );
+            await this.handleRoomError(roomName, error);
         }
     }
 
@@ -233,10 +248,73 @@ export class ChamberService {
             clearInterval(intervalId);
         }
 
+        // Clear all retry timeouts
+        for (const [room, state] of this.roomRetries) {
+            if (state.timeout) {
+                clearTimeout(state.timeout);
+            }
+        }
+
         // Clear all data structures
         this.pollingIntervals.clear();
         this.subscribers.clear();
         this.messageCache.clear();
+        this.roomRetries.clear();
         this.eventEmitter.removeAllListeners();
+    }
+
+    getRetryState(roomName) {
+        if (!this.roomRetries.has(roomName)) {
+            this.roomRetries.set(roomName, {
+                delay: INITIAL_RETRY_DELAY,
+                errors: 0,
+                timeout: null
+            });
+        }
+        return this.roomRetries.get(roomName);
+    }
+
+    resetRetryState(roomName) {
+        const state = this.getRetryState(roomName);
+        state.delay = INITIAL_RETRY_DELAY;
+        state.errors = 0;
+        if (state.timeout) {
+            clearTimeout(state.timeout);
+            state.timeout = null;
+        }
+    }
+
+    async handleRoomError(roomName, error) {
+        const state = this.getRetryState(roomName);
+        state.errors++;
+
+        console.warn(`[ChamberService] Room ${roomName} error (${state.errors}/${MAX_CONSECUTIVE_ERRORS}):`, error.message);
+
+        if (state.errors >= MAX_CONSECUTIVE_ERRORS) {
+            // Implement exponential backoff
+            state.delay = Math.min(state.delay * 2, MAX_RETRY_DELAY);
+            console.log(`[ChamberService] Room ${roomName} cooling down for ${state.delay/1000}s`);
+            
+            // Schedule retry
+            if (state.timeout) clearTimeout(state.timeout);
+            state.timeout = setTimeout(() => {
+                console.log(`[ChamberService] Retrying room ${roomName}`);
+                this.resetRetryState(roomName);
+                this.pollMessages(roomName).catch(e => 
+                    console.warn(`[ChamberService] Retry failed for ${roomName}:`, e.message)
+                );
+            }, state.delay);
+
+            // Temporarily unsubscribe
+            const subscribers = this.subscribers.get(roomName);
+            if (subscribers) {
+                this.subscribers.delete(roomName);
+                const intervalId = this.pollingIntervals.get(roomName);
+                if (intervalId) {
+                    clearInterval(intervalId);
+                    this.pollingIntervals.delete(roomName);
+                }
+            }
+        }
     }
 }
