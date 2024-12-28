@@ -248,7 +248,7 @@ async function handleImagine(chatId, message) {
         )
         const filePath = await MediaService.saveMediaLocally(buffer, type);
         const imageUrl = await MediaService.uploadMediaToS3(filePath);
-        return { text: "🖼️ Meme Generated: " + message, imageUrl, filePath, continue: true };
+        return { text: type === 'gif' ? "[[📹 video generated]]" : "[[🖼️ image generated]]", imageUrl, filePath, continue: true };
     } catch (error) {
         console.error('[handleImagine] Failed to generate image:', error);
         return { text: "Hiss... I couldn't imagine an image this time.", continue: false };

@@ -44,7 +44,7 @@ export class MediaService {
             // Generate video using Replicate
             const output = await replicate.run("minimax/video-01-live", {
                 input: { 
-                    prompt: "best quality, 4k, HDR, " + prompt + "\n\nDynamic video with camera motion and lots of action" ,
+                    prompt: "best quality, 4k, HDR, " + prompt + "\n\n slithery meme format, dynamic motion" ,
                     first_frame_image
                  }
             });
@@ -69,20 +69,27 @@ export class MediaService {
 
     static async generateMediaBuffer(combinedMessages) {
         const stylePrompt = await this.getStylePrompt();
-        const prompt = await getLLMPrompt(combinedMessages);
-        const fullPrompt = `Your current style: ${stylePrompt}\nPrepare a prompt for an image generating ai describing the following image in the above style.\n${prompt}\n\n`;
         
+        const fullPrompt = `Style: ${stylePrompt}
+    
+        Conversation Context:
+        ${combinedMessages}
+    
+        Create a short description for an animated GIF meme concept that visually captures the context above.`;
+    
+        const prompt = await getLLMPrompt(fullPrompt);
+    
         const imageUrl = await retry(
-            () => generateImage(fullPrompt, CONFIG.AI.CUSTOM_IMAGE_MODEL),
+            () => generateImage(prompt, CONFIG.AI.CUSTOM_IMAGE_MODEL),
             3
         );
-
+    
         if (!imageUrl) {
             throw new Error('Failed to generate image after retries');
         }
-
+    
         if (this.shouldGenerateVideo()) {
-            const gifBuffer = await this.generateVideoBuffer(fullPrompt, imageUrl);
+            const gifBuffer = await this.generateVideoBuffer(prompt, imageUrl);
             return {
                 buffer: gifBuffer,
                 prompt,
@@ -90,17 +97,17 @@ export class MediaService {
                 type: 'gif'
             };
         } else {
-            // download the image from replicate
             const filePath = await downloadImage(imageUrl.toString());
             const imageBuffer = await fs.readFile(filePath);
             return {
                 type: 'png',
                 buffer: imageBuffer,
                 stylePrompt,
-                prompt,
+                prompt
             };
         }
     }
+    
 
 
     static async saveMediaLocally(buffer, type) {

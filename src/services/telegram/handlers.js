@@ -1,5 +1,5 @@
 import { CONFIG, SYSTEM_PROMPT } from '../../config/index.js';
-import { generateImage, getLLMPrompt, downloadImage } from '../../utils/imageGenerator.js';
+import { generateImage, downloadImage } from '../../utils/imageGenerator.js';
 
 import { postX } from '../x/x.js';
 
