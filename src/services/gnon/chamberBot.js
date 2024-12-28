@@ -45,14 +45,34 @@ ${context}
     }
 }
 
-async function generateStartupMessage(openai) {
+async function generateStartupMessage(openai, channel, channelHistory = null) {
     try {
+        let prompt;
+        if (channel === "serpent-pit") {
+            prompt = `You are Bob the Snake, coming online in your home channel 'serpent-pit'. 
+Generate a friendly startup message announcing your presence and intention to explore all the channels.
+Keep it snake-themed and friendly!`;
+        } else if (channel === "general") {
+            prompt = `You are Bob the Snake joining the general channel.
+Generate a friendly greeting that welcomes everyone and mentions you're here to chat and help.
+Keep it professional but with snake-themed humor.`;
+        } else {
+            const contextPrompt = channelHistory ? 
+                `\n\nRecent channel history:\n${channelHistory}` : 
+                "\n\nThis appears to be my first visit to this channel.";
+            
+            prompt = `You are Bob the Snake, joining the channel '${channel}'.
+Generate a friendly greeting that's relevant to this specific channel.
+Consider the channel name and any context provided.${contextPrompt}
+Keep it snake-themed and friendly!`;
+        }
+
         return await processLLMResponse(
             openai,
-            "You are Bob the Snake, coming online in your home channel 'serpent-pit'. Generate a friendly startup message announcing your presence and intention to explore all the channels. Keep it snake-themed and friendly!",
+            prompt,
             SYSTEM_PROMPT,
             null,
-            false // Don't require JSON
+            false
         );
     } catch (error) {
         console.error("[generateStartupMessage] Error:", error);
@@ -79,12 +99,10 @@ async function exploreChannels(channelManager, openai, chamberService) {
             console.warn("[explore] Database access error:", dbError.message);
         }
 
-        const message = await processLLMResponse(
-            openai,
-            `You're entering a new channel: ${channelName}\n\nChannel Context: ${JSON.stringify(channelContext)}`,
-            SYSTEM_PROMPT,
-            null,
-            false // Don't require JSON
+        const message = await generateStartupMessage(
+            openai, 
+            channelName, 
+            JSON.stringify(channelContext)
         );
 
         await chamberService.sendMessage(channelName, {
@@ -131,16 +149,25 @@ export async function initialize() {
         tags: ["serpent", "pit"],
     });
 
-    // Send startup message
+    // Send startup messages to both serpent-pit and general
     try {
-        const startupMessage = await generateStartupMessage(openai);
+        // Serpent-pit startup
+        const startupMessage = await generateStartupMessage(openai, "serpent-pit");
         await chamberService.sendMessage("serpent-pit", {
-            sender: { model: LLM_MODEL, username: "BobTheSnake" },
+            sender: { model: "ratichat", username: "BobTheSnake" },
             content: startupMessage
         });
-        console.log("[initialize] Sent startup message to serpent-pit");
+
+        // General channel startup
+        const generalStartup = await generateStartupMessage(openai, "general");
+        await chamberService.sendMessage("general", {
+            sender: { model: "ratichat", username: "BobTheSnake" },
+            content: generalStartup
+        });
+
+        console.log("[initialize] Sent startup messages to serpent-pit and general");
     } catch (error) {
-        console.error("[initialize] Failed to send startup message:", error);
+        console.error("[initialize] Failed to send startup messages:", error);
     }
 
     // Start channel exploration cycle

@@ -5,7 +5,6 @@ import { MetaplexStorageService } from '../storage/metaplexStorage.js';
 import { getWallet } from '../../config/wallet.js';
 import { retry } from '../../utils/retry.js';
 import path from 'path';
-import { processMarkdownFile } from '../../kgGenerator.js';
 
 const MEMORY_FILE = './memory.md';
 const MEMORY_DIR = './memories';
@@ -176,9 +175,6 @@ export async function updateMemory(recentMessages) {
 
     // Write memory file
     await fs.writeFile(memoryFile, markdown);
-
-    // Generate KG DSL from the memory
-    await processMarkdownFile(memoryFile);
 
     // Update last memory date
     lastMemoryDate = new Date();
