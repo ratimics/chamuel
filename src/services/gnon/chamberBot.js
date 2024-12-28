@@ -66,7 +66,7 @@ function generateStructuredPrompt() {
 async function handleSpeak(roomName, content, chamberService) {
     console.log("[handleSpeak] Sending response:", content);
     await chamberService.sendMessage(roomName, {
-        username: "BobTheSnake",
+        sender: "BobTheSnake",
         content: content,
     });
     return { text: content, continue: true };
@@ -75,12 +75,12 @@ async function handleSpeak(roomName, content, chamberService) {
 async function handleThink(roomName, thinkingContent, chamberService) {
     console.log("[handleThink] Storing reflection:", thinkingContent);
     await chamberService.sendMessage(roomName, {
-        username: "BobTheSnake",
+        sender: "BobTheSnake",
         content: `🤔 ${thinkingContent}`,
     });
     await updateMemory([
         {
-            username: "BobTheSnake",
+            sender: "BobTheSnake",
             role: "assistant_thinking",
             content: thinkingContent,
         },
@@ -91,7 +91,7 @@ async function handleThink(roomName, thinkingContent, chamberService) {
 async function handleWait(roomName, content, chamberService) {
     console.log("[handleWait] Sending wait response:", content);
     await chamberService.sendMessage(roomName, {
-        username: "BobTheSnake",
+        sender: "BobTheSnake",
         content: content,
     });
     return { continue: false };
@@ -175,7 +175,7 @@ export async function initialize() {
     const unsubscribe = chamberService.subscribe(
         "serpent-pit",
         async (message) => {
-            await handleMessage("general", [message], openai, chamberService);
+            await handleMessage("serpent-pit", [message], openai, chamberService);
         },
     );
 
