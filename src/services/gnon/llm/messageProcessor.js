@@ -19,7 +19,7 @@ export function generateStructuredPrompt(style, lastActionTimes) {
     // ...rest of prompt format...`;
 }
 
-export async function processLLMResponse(openai, context, systemPrompt, responseInstructions, requireJson = true) {
+export async function processLLMResponse(openai, context, systemPrompt, responseInstructions = null, requireJson = true) {
     try {
         const memory = await loadMemory();
         const config = {
@@ -35,9 +35,12 @@ export async function processLLMResponse(openai, context, systemPrompt, response
         // Add JSON format requirement and response instructions if needed
         if (requireJson) {
             config.response_format = { type: "json_object" };
-            config.messages.push({ role: "user", content: responseInstructions });
         }
 
+        if (responseInstructions) {
+            config.messages.push({ role: "user", content: responseInstructions });
+        }
+        
         const response = await openai.chat.completions.create(config);
         const content = response.choices[0].message.content;
 

@@ -6,7 +6,7 @@ import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 /* ------------------ CONFIG ------------------ */
 
 // Poll interval in milliseconds (e.g., 10 seconds)
-const POLL_INTERVAL = 10_000;  
+const POLL_INTERVAL = 1 * 60 * 1000;  
 
 // Which channel is Bob's "home"
 const HOME_CHANNEL = "serpent-pit";
