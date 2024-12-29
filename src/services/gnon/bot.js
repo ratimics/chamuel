@@ -44,7 +44,12 @@ ${context}
         if (!ACTIONS[parsed.action]) return;
         
         state.lastActionTimes[parsed.action] = Date.now();
-        return ACTIONS[parsed.action].handler(roomName, parsed.message, chamberService);
+        const result = await ACTIONS[parsed.action].handler(roomName, parsed.message, chamberService);
+        
+        // Record that Bob sent a message
+        chamberService.channelManager.recordBobMessage(roomName);
+        
+        return result;
     } catch (error) {
         console.error("[handleMessage] Error:", error);
         return ACTIONS.speak.handler(
@@ -92,45 +97,52 @@ Keep it snake-themed and friendly!`;
 
 async function exploreChannels(channelManager, openai, chamberService) {
     try {
-        const channelName = await channelManager.getUnvisitedChannel();
-        if (!channelName) {
-            console.warn("[explore] No channel available, retrying in 5 minutes");
-            setTimeout(() => exploreChannels(channelManager, openai, chamberService), 5 * 60 * 1000);
+        // Get active channels where Bob wasn't last speaker
+        const activeChannels = await channelManager.getActiveChannels();
+        
+        if (activeChannels.length === 0) {
+            console.log("[explore] No active channels found, retrying in 2 minutes");
+            setTimeout(() => exploreChannels(channelManager, openai, chamberService), 2 * 60 * 1000);
             return;
         }
+
+        // Select a random channel from the top 3 most recently active
+        const topChannels = activeChannels.slice(0, 3);
+        const selectedChannel = topChannels[Math.floor(Math.random() * topChannels.length)];
         
         let channelContext = {};
         let entityProfiles = [];
         
         try {
-            channelContext = await channelManager.analyzer.getChannelContext(channelName);
-            entityProfiles = await channelManager.analyzer.getRecentEntityProfiles(channelName);
+            channelContext = await channelManager.analyzer.getChannelContext(selectedChannel.name);
+            entityProfiles = await channelManager.analyzer.getRecentEntityProfiles(selectedChannel.name);
         } catch (dbError) {
             console.warn("[explore] Database access error:", dbError.message);
         }
 
         const message = await generateStartupMessage(
             openai, 
-            channelName, 
+            selectedChannel.name, 
             JSON.stringify(channelContext)
         );
 
-        await chamberService.sendMessage(channelName, {
+        await chamberService.sendMessage(selectedChannel.name, {
             sender: { model: LLM_MODEL, username: "BobTheSnake" },
             content: message
-        }).catch(error => {
-            console.warn("[explore] Failed to send message to channel:", error.message);
         });
         
-        channelManager.markChannelVisited(channelName);
-        console.log(`[explore] Visited channel ${channelName}`);
+        // Record Bob's message
+        channelManager.recordBobMessage(selectedChannel.name);
+        channelManager.markChannelVisited(selectedChannel.name);
+        
+        console.log(`[explore] Joined conversation in channel ${selectedChannel.name}`);
 
         // Schedule next exploration with randomized delay between 2-3 minutes
         const delay = 2 * 60 * 1000 + Math.random() * 60 * 1000;
         setTimeout(() => exploreChannels(channelManager, openai, chamberService), delay);
     } catch (error) {
         console.error("[explore] Channel exploration error:", error);
-        setTimeout(() => exploreChannels(channelManager, openai, chamberService), 5 * 60 * 1000);
+        setTimeout(() => exploreChannels(channelManager, openai, chamberService), 2 * 60 * 1000);
     }
 }
 
@@ -185,106 +197,119 @@ async function selectNextChannel(channelManager) {
 }
 
 export async function initialize() {
-    const chamberService = new ChamberService(
-        process.env.ECHOCHAMBER_API_URL,
-        process.env.ECHOCHAMBER_API_KEY
-    );
-
-    await chamberService.verifyConnection();
-
-    const openai = new OpenAI({
-        baseURL: process.env.OPENAI_API_URL,
-        apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    const analyzer = new ChannelAnalyzer(process.env.MONGODB_URI);
-    await analyzer.connect();
-
-    const channelManager = new ChannelManager(chamberService, analyzer, openai);
-
-    // Initialize home channel
-    await chamberService.createRoom({
-        name: HOME_CHANNEL,
-        description: "Welcome to the serpent pit.",
-        tags: ["serpent", "pit"],
-    });
-
-    // Send startup messages
     try {
-        // Home channel startup
-        const startupMessage = await generateStartupMessage(openai, HOME_CHANNEL);
-        await chamberService.sendMessage(HOME_CHANNEL, {
-            sender: { model: LLM_MODEL, username: "BobTheSnake" },
-            content: startupMessage
+        const chamberService = new ChamberService(
+            process.env.ECHOCHAMBER_API_URL,
+            process.env.ECHOCHAMBER_API_KEY
+        );
+
+        console.log("[Bot] Verifying connection to server...");
+        try {
+            await chamberService.verifyConnection();
+        } catch (error) {
+            console.error("[Bot] Server connection failed:", error.message);
+            console.error("[Bot] Please ensure the server is running and try again.");
+            process.exit(1);
+        }
+
+        const openai = new OpenAI({
+            baseURL: process.env.OPENAI_API_URL,
+            apiKey: process.env.OPENAI_API_KEY,
         });
 
-        // General channel startup
-        const generalStartup = await generateStartupMessage(openai, "general");
-        await chamberService.sendMessage("general", {
-            sender: { model: LLM_MODEL, username: "BobTheSnake" },
-            content: generalStartup
+        const analyzer = new ChannelAnalyzer(process.env.MONGODB_URI);
+        await analyzer.connect();
+
+        const channelManager = new ChannelManager(chamberService, analyzer, openai);
+
+        // Initialize home channel
+        await chamberService.createRoom({
+            name: HOME_CHANNEL,
+            description: "Welcome to the serpent pit.",
+            tags: ["serpent", "pit"],
         });
 
-        console.log("[initialize] Sent startup messages to home channel and general");
-    } catch (error) {
-        console.error("[initialize] Failed to send startup messages:", error);
-    }
+        // Send startup messages
+        try {
+            // Home channel startup
+            const startupMessage = await generateStartupMessage(openai, HOME_CHANNEL);
+            await chamberService.sendMessage(HOME_CHANNEL, {
+                sender: { model: LLM_MODEL, username: "BobTheSnake" },
+                content: startupMessage
+            });
 
-    // Set up dedicated monitoring for home channel
-    await channelManager.subscribeToChannel(
-        HOME_CHANNEL,
-        async (channelName, messages) => await handleMessage(channelName, messages, openai, chamberService)
-    );
+            // General channel startup
+            const generalStartup = await generateStartupMessage(openai, "general");
+            await chamberService.sendMessage("general", {
+                sender: { model: LLM_MODEL, username: "BobTheSnake" },
+                content: generalStartup
+            });
 
-    // Refresh home channel subscription periodically to ensure we don't miss messages
-    setInterval(async () => {
+            console.log("[initialize] Sent startup messages to home channel and general");
+        } catch (error) {
+            console.error("[initialize] Failed to send startup messages:", error);
+        }
+
+        // Set up dedicated monitoring for home channel
         await channelManager.subscribeToChannel(
             HOME_CHANNEL,
             async (channelName, messages) => await handleMessage(channelName, messages, openai, chamberService)
         );
-    }, HOME_CHANNEL_CHECK_INTERVAL);
 
-    // Start channel exploration cycle
-    await exploreChannels(channelManager, openai, chamberService);
-
-    // Start channel rotation for non-home channels
-    setInterval(async () => {
-        const nextChannel = await selectNextChannel(channelManager);
-        if (nextChannel && nextChannel !== state.currentChannel) {
-            console.log(`[rotate] Moving to channel: ${nextChannel}`);
-            
-            // Subscribe to the new channel
+        // Refresh home channel subscription periodically to ensure we don't miss messages
+        setInterval(async () => {
             await channelManager.subscribeToChannel(
-                nextChannel,
-                async (channelName, messages) => {
-                    // Update activity timestamp
-                    state.lastChannelActivity[channelName] = Date.now();
-                    
-                    // Check for mentions in all messages
-                    await checkForMentions(messages);
-                    
-                    // Only respond if it's the current active channel or if mentioned
-                    if (channelName === state.currentChannel || state.recentMentions.has(channelName)) {
-                        await handleMessage(channelName, messages, openai, chamberService);
-                    }
-                }
+                HOME_CHANNEL,
+                async (channelName, messages) => await handleMessage(channelName, messages, openai, chamberService)
             );
-            
-            // Send entrance message for new channel
-            const message = await generateStartupMessage(openai, nextChannel);
-            await chamberService.sendMessage(nextChannel, {
-                sender: { model: LLM_MODEL, username: "BobTheSnake" },
-                content: message
-            });
-        }
-    }, CHANNEL_CHECK_INTERVAL);
+        }, HOME_CHANNEL_CHECK_INTERVAL);
 
-    const cleanup = () => {
-        channelManager.cleanup();
-        chamberService.cleanup();
-        analyzer.close();
-    };
+        // Start channel exploration cycle
+        await exploreChannels(channelManager, openai, chamberService);
 
-    process.on("SIGINT", cleanup);
-    return { chamberService, cleanup };
+        // Start channel rotation for non-home channels
+        setInterval(async () => {
+            const nextChannel = await selectNextChannel(channelManager);
+            if (nextChannel && nextChannel !== state.currentChannel) {
+                console.log(`[rotate] Moving to channel: ${nextChannel}`);
+                
+                // Subscribe to the new channel
+                await channelManager.subscribeToChannel(
+                    nextChannel,
+                    async (channelName, messages) => {
+                        // Update activity timestamp
+                        state.lastChannelActivity[channelName] = Date.now();
+                        
+                        // Check for mentions in all messages
+                        await checkForMentions(messages);
+                        
+                        // Only respond if it's the current active channel or if mentioned
+                        if (channelName === state.currentChannel || state.recentMentions.has(channelName)) {
+                            await handleMessage(channelName, messages, openai, chamberService);
+                        }
+                    }
+                );
+                
+                // Send entrance message for new channel
+                const message = await generateStartupMessage(openai, nextChannel);
+                await chamberService.sendMessage(nextChannel, {
+                    sender: { model: LLM_MODEL, username: "BobTheSnake" },
+                    content: message
+                });
+            }
+        }, CHANNEL_CHECK_INTERVAL);
+
+        const cleanup = () => {
+            channelManager.cleanup();
+            chamberService.cleanup();
+            analyzer.close();
+        };
+
+        process.on("SIGINT", cleanup);
+        return { chamberService, cleanup };
+    } catch (error) {
+        console.error("[Bot] Fatal initialization error:", error.message);
+        console.error("[Bot] Stack trace:", error.stack);
+        process.exit(1);
+    }
 }

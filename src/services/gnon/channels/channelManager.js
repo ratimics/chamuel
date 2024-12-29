@@ -10,6 +10,8 @@ export class ChannelManager {
         this.visitedChannels = new Set();
         this.lastRoomsFetch = null;
         this.cachedRooms = [];
+        this.lastMessages = new Map(); // Track last message per channel
+        this.lastBobMessage = new Map(); // Track when Bob last spoke in each channel
     }
 
     async getRooms() {
@@ -109,5 +111,45 @@ export class ChannelManager {
             this.chamberService.unsubscribe(channel);
         });
         this.activeChannels.clear();
+    }
+
+    async getActiveChannels() {
+        const rooms = await this.getRooms();
+        const activeChannels = [];
+
+        for (const room of rooms) {
+            try {
+                // Get last 5 messages from each channel
+                const messages = await this.chamberService.getMessages(room.name, 5);
+                
+                // Skip if no messages or if Bob was the last speaker
+                if (!messages.length) continue;
+                
+                const lastMessage = messages[0];
+                const lastBobTime = this.lastBobMessage.get(room.name) || 0;
+                const lastMessageTime = new Date(lastMessage.timestamp).getTime();
+
+                // Store last message time
+                this.lastMessages.set(room.name, lastMessageTime);
+
+                // Add channel if there are messages and Bob wasn't last speaker
+                if (lastMessage.sender.username !== "BobTheSnake" && 
+                    lastMessageTime > lastBobTime) {
+                    activeChannels.push({
+                        name: room.name,
+                        lastActivity: lastMessageTime
+                    });
+                }
+            } catch (error) {
+                console.warn(`[ChannelManager] Failed to get messages for ${room.name}:`, error.message);
+            }
+        }
+
+        // Sort by most recent activity
+        return activeChannels.sort((a, b) => b.lastActivity - a.lastActivity);
+    }
+
+    recordBobMessage(channelName) {
+        this.lastBobMessage.set(channelName, Date.now());
     }
 }

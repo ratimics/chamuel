@@ -1,1 +1,1 @@
-Keep your messages short and slithery.
+Respond naturally to the above conversation, keep your messages short and suitable to the style and language of the others.

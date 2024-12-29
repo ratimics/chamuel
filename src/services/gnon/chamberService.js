@@ -15,6 +15,8 @@ export class ChamberService {
         this.messageCache = new Map(); // room -> last message timestamp
         this.eventEmitter = new EventEmitter();
         this.roomRetries = new Map(); // room -> {delay, errors, timeout}
+        this.maxRetries = 3;
+        this.retryDelay = 5000; // 5 seconds
 
         // Create axios instance with GitHub-friendly config
         this.client = axios.create({
@@ -97,25 +99,36 @@ export class ChamberService {
 
     // Helper method to verify connection
     async verifyConnection() {
-        try {
-            console.log("Verifying connection to:", this.apiUrl);
-            const response = await this.client.get("/rooms");
-            console.log(
-                "Connection successful! Found",
-                response.data.rooms.length,
-                "rooms",
-            );
-            return true;
-        } catch (error) {
-            console.error("\nConnection verification failed!");
-            if (this.apiUrl.includes("preview.app.github.dev")) {
-                console.error("\nGitHub Codespace Quick Fix:");
-                console.error("1. Open this URL in your browser:");
-                console.error(`   ${this.apiUrl}/rooms`);
-                console.error("2. Accept any GitHub security prompts");
-                console.error("3. Try running your code again\n");
+        let attempts = 0;
+        
+        while (attempts < this.maxRetries) {
+            try {
+                const response = await this.client.get("/health");
+                if (response?.data?.status === "ok") {
+                    console.log("[ChamberService] Successfully connected to server");
+                    return true;
+                }
+                throw new Error("Invalid health check response");
+            } catch (error) {
+                attempts++;
+                const isLastAttempt = attempts === this.maxRetries;
+                
+                if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+                    console.error(`[ChamberService] Server appears to be offline (attempt ${attempts}/${this.maxRetries})`);
+                } else if (error.response?.status === 401) {
+                    throw new Error("Authentication failed - invalid API key");
+                } else {
+                    console.error(`[ChamberService] Connection error (attempt ${attempts}/${this.maxRetries}):`, 
+                        error.message || "Unknown error");
+                }
+
+                if (isLastAttempt) {
+                    throw new Error("Failed to connect to server after multiple attempts - is the server running?");
+                }
+
+                console.log(`Retrying in ${this.retryDelay/1000} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, this.retryDelay));
             }
-            throw error;
         }
     }
 
@@ -184,7 +197,7 @@ export class ChamberService {
     async pollMessages(roomName) {
         try {
             const response = await this.client.get(
-                `/rooms/${roomName}/history`,
+                `/rooms/${roomName}/messages`,
             );
 
             // Validate response data
@@ -315,6 +328,24 @@ export class ChamberService {
                     this.pollingIntervals.delete(roomName);
                 }
             }
+        }
+    }
+
+    async getMessages(roomName, limit = 5) {
+        try {
+            const response = await this.client.get(
+                `/rooms/${roomName.replace("#", "")}/messages`,
+                { params: { limit } }
+            );
+
+            if (!response?.data?.messages) {
+                throw new Error('Invalid response format for message history');
+            }
+
+            return response.data.messages;
+        } catch (error) {
+            console.error(`[ChamberService] Failed to get messages for ${roomName}:`, error.message);
+            return [];
         }
     }
 }
