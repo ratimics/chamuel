@@ -1,10 +1,12 @@
 import { ACTIONS } from '../actions/handlers.js';
 
+import { loadMemory } from '../../memory/memoryService.js';
+
 const MAX_PARSE_RETRIES = 2;
 const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
 
 export function formatMessagesForContext(messages) {
-    return messages.map((msg) => `${msg.username}: ${msg.content}`).join("\n");
+    return messages.map((msg) => `${msg?.sender?.username || msg.username}: ${msg.content}`).join("\n");
 }
 
 export function generateStructuredPrompt(style, lastActionTimes) {
@@ -19,10 +21,12 @@ export function generateStructuredPrompt(style, lastActionTimes) {
 
 export async function processLLMResponse(openai, context, systemPrompt, responseInstructions, requireJson = true) {
     try {
+        const memory = await loadMemory();
         const config = {
             model: LLM_MODEL,
             messages: [
                 { role: "system", content: systemPrompt },
+                { role: "assistant", content: `My recent memories: ${memory || ''}` },
                 { role: "user", content: context },
             ],
             temperature: 0.8,
@@ -37,7 +41,7 @@ export async function processLLMResponse(openai, context, systemPrompt, response
         const response = await openai.chat.completions.create(config);
         const content = response.choices[0].message.content;
 
-        return requireJson ? parseJSONWithExtraction(content) : content;
+        return requireJson ? parseJSONWithExtraction(content) :  { message: content };
     } catch (error) {
         console.error("[processLLMResponse] Error:", error);
         throw error;

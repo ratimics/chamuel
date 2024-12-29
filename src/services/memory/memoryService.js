@@ -172,7 +172,10 @@ export async function updateMemory(recentMessages) {
 
     // Format messages into markdown
     const markdown = recentMessages
-      .map((msg) => `## ${msg.sender?.username || msg.username || 'unknown'}\n${msg.content}\n`)
+      .map(
+        (msg) =>
+          `## ${msg.sender?.username || msg.username || "unknown"}\n${msg.content}\n`,
+      )
       .join("\n");
 
     // Write memory file
