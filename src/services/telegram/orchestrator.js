@@ -119,8 +119,10 @@ export async function handleText(chatId, openai, bot) {
                 model: "nousresearch/hermes-3-llama-3.1-405b",
                 messages: [
                     { role: "system", content: structuredPrompt },
-                    { role: "user", content: combinedMessages },
-                    { role: "user", content: responseInstructions },
+                    {
+                        role: "user",
+                        content: combinedMessages + responseInstructions,
+                    },
                 ],
                 response_format: {
                     type: "json_schema",
@@ -234,11 +236,23 @@ async function handleWait(chatId, content) {
 }
 
 async function handleSpeak(chatId, content) {
-    console.log("[handleSpeak] Sending response:", typeof content === 'string' ? content : 'Complex object');
+    console.log(
+        "[handleSpeak] Sending response:",
+        typeof content === "string" ? content : "Complex object",
+    );
     await MessageService.storeAssistantMessage(chatId, [
-        { type: "text", text: typeof content === 'string' ? content : content.text || 'Hiss...' },
+        {
+            type: "text",
+            text:
+                typeof content === "string"
+                    ? content
+                    : content.text || "Hiss...",
+        },
     ]);
-    return { text: typeof content === 'string' ? content : content.text || 'Hiss...', continue: true };
+    return {
+        text: typeof content === "string" ? content : content.text || "Hiss...",
+        continue: true,
+    };
 }
 
 async function handleThink(chatId, thinkingContent) {
@@ -258,30 +272,34 @@ async function handleThink(chatId, thinkingContent) {
 
 async function handleImagine(chatId, message) {
     console.log("[handleImagine] Starting image generation...");
-    
+
     // Send initial response
     const response = {
         text: "🎨 I'm working on imagining that... Check back in a moment! 🐍",
-        continue: false
+        continue: false,
     };
 
     // Start image generation in background
     fireAndForget(async () => {
         try {
-            const { buffer, type } = await MediaService.generateMediaBuffer(message);
+            const { buffer, type } =
+                await MediaService.generateMediaBuffer(message);
             await XService.maybePostImage(buffer, message, type);
             const filePath = await MediaService.saveMediaLocally(buffer, type);
             const imageUrl = await MediaService.uploadMediaToS3(filePath);
-            
+
             // Send the generated image as a new message
             await MessageService.storeAssistantMessage(chatId, [
                 { type: "text", text: "Here's what I imagined! 🎨" },
-                { type: "image", url: imageUrl }
+                { type: "image", url: imageUrl },
             ]);
         } catch (error) {
             console.error("[handleImagine] Failed to generate image:", error);
             await MessageService.storeAssistantMessage(chatId, [
-                { type: "text", text: "Hiss... I couldn't imagine an image this time." }
+                {
+                    type: "text",
+                    text: "Hiss... I couldn't imagine an image this time.",
+                },
             ]);
         }
     });

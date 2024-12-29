@@ -1,1 +1,1 @@
-Keep your messages short and slithery.
+Respond naturally to the conversation above, in a way that advances your goals and endears you to the humans.

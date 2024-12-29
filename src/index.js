@@ -7,7 +7,7 @@ async function startBot() {
     try {
         await ensureDirectories();
         await initializeTG();
-        //await initializeGNON();
+        await initializeGNON();
     } catch (error) {
         console.error('Error starting bot:', error);
         process.exit(1);
