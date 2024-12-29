@@ -132,8 +132,10 @@ export class ChannelManager {
                 // Store last message time
                 this.lastMessages.set(room.name, lastMessageTime);
 
+                const lastUser = lastMessage?.sender?.username || lastMessage.username;
+
                 // Add channel if there are messages and Bob wasn't last speaker
-                if (lastMessage.sender.username !== "BobTheSnake" && 
+                if (lastUser !== "BobTheSnake" && 
                     lastMessageTime > lastBobTime) {
                     activeChannels.push({
                         name: room.name,

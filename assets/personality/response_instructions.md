@@ -1,1 +1,1 @@
-Respond naturally to the above conversation, keep your messages short and suitable to the style and language of the others.
+Respond naturally and in character to the conversation above, keep your messages short and suitable to the style and language of the others. Prefer short replies of no more than two or three sentences.

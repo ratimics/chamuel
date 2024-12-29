@@ -2,7 +2,7 @@ import axios from "axios";
 import https from "https";
 import EventEmitter from "events";
 
-const INITIAL_RETRY_DELAY = 30000; // 30 seconds
+const INITIAL_RETRY_DELAY = 30000;       // 30 seconds
 const MAX_RETRY_DELAY = 30 * 60 * 1000; // 30 minutes
 const MAX_CONSECUTIVE_ERRORS = 5;
 
@@ -10,15 +10,14 @@ export class ChamberService {
   constructor(apiUrl, apiKey) {
     this.apiUrl = apiUrl;
     this.apiKey = apiKey;
-    this.subscribers = new Map();    // room -> Set of callbacks
-    this.pollingIntervals = new Map(); // room -> interval ID
-    this.messageCache = new Map();     // room -> last message timestamp
+    this.subscribers = new Map();    // roomName -> Set<callback(messages[])>
+    this.pollingIntervals = new Map();  // roomName -> interval ID
+    this.messageCache = new Map();      // roomName -> last message timestamp
     this.eventEmitter = new EventEmitter();
-    this.roomRetries = new Map();      // room -> { delay, errors, timeout }
-    this.maxRetries = 3;
-    this.retryDelay = 5000; // 5 seconds
+    this.roomRetries = new Map();       // roomName -> { delay, errors, timeout }
+    this.maxRetries = 3;               // verifyConnection attempts
+    this.retryDelay = 5000;            // 5 seconds between attempts
 
-    // Create axios instance with GitHub-friendly config
     this.client = axios.create({
       baseURL: this.apiUrl,
       headers: {
@@ -26,27 +25,25 @@ export class ChamberService {
         "x-api-key": this.apiKey,
         Accept: "*/*",
       },
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: false, // Only for dev or self-signed certs
-      }),
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }), // For dev/self-signed
       timeout: 15000,
       maxRedirects: 5,
       validateStatus: (status) => status >= 200 && status < 500,
     });
 
-    // Add response interceptor for better error handling
+    // Handle some common connection errors
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.code === "ECONNREFUSED") {
-          console.error("\n[ChamberService] Connection refused. Please check:");
-          console.error("1. The port is forwarded in GitHub Codespaces (or Docker).");
-          console.error("2. The API URL is correct:", this.apiUrl);
-          console.error("3. If using GitHub Codespaces, open this URL in browser first:");
-          console.error(`   ${this.apiUrl}/rooms\n`);
+          console.error("\n[ChamberService] Connection refused. Possible fixes:\n" +
+            "1. Make sure the server is running and port is forwarded (Codespaces/Docker).\n" +
+            "2. Confirm the API URL is correct:\n   " + this.apiUrl + "\n" +
+            "3. If using GitHub Codespaces, open the URL in a browser at least once:\n   " + this.apiUrl + "/rooms\n"
+          );
         }
         if (error.response?.status === 502) {
-          console.warn("[ChamberService] Server temporarily unavailable (502)");
+          console.warn("[ChamberService] Server temporarily unavailable (502).");
           return Promise.reject(error);
         }
         throw error;
@@ -55,8 +52,8 @@ export class ChamberService {
   }
 
   /**
-   * Verify the server is reachable and returns a list of rooms.
-   * Throws if it cannot connect after multiple retries.
+   * Verifies the server is online by attempting to fetch /rooms.
+   * Retries up to maxRetries times if the server is unreachable.
    */
   async verifyConnection() {
     let attempts = 0;
@@ -64,51 +61,43 @@ export class ChamberService {
     while (attempts < this.maxRetries) {
       try {
         const response = await this.client.get("/rooms");
-        if (!!response?.data?.rooms) {
-          console.log("[ChamberService] Successfully connected to server");
+        if (response?.data?.rooms) {
+          console.log("[ChamberService] Successfully connected to server.");
           return true;
         }
-        throw new Error("Invalid health check response");
+        throw new Error("Invalid or empty /rooms response");
       } catch (error) {
         attempts++;
         const isLastAttempt = attempts === this.maxRetries;
 
         if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
-          console.error(
-            `[ChamberService] Server appears to be offline (attempt ${attempts}/${this.maxRetries})`,
-          );
+          console.error(`[ChamberService] Server offline? (attempt ${attempts}/${this.maxRetries})`);
         } else if (error.response?.status === 401) {
-          throw new Error("Authentication failed - invalid API key");
+          throw new Error("Authentication failed: invalid API key");
         } else {
-          console.error(
-            `[ChamberService] Connection error (attempt ${attempts}/${this.maxRetries}):`,
-            error.message || "Unknown error",
-          );
+          console.error(`[ChamberService] Connection error (attempt ${attempts}/${this.maxRetries}):`, error.message);
         }
 
         if (isLastAttempt) {
-          throw new Error(
-            "[ChamberService] Failed to connect to server after multiple attempts - is the server running?",
-          );
+          throw new Error("[ChamberService] Unable to connect after multiple retries. Server down?");
         }
 
-        console.log(`[ChamberService] Retrying in ${this.retryDelay / 1000} seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, this.retryDelay));
+        console.log(`[ChamberService] Retrying in ${this.retryDelay / 1000}s...`);
+        await new Promise((r) => setTimeout(r, this.retryDelay));
       }
     }
   }
 
   /**
-   * List all channels/rooms from the server.
-   * @returns {Promise<Array>} - Array of room objects.
+   * Returns a list of all rooms from the server.
    */
   async listChannels() {
     try {
       const response = await this.client.get("/rooms");
       if (!response?.data?.rooms) {
-        throw new Error("No rooms found in response data");
+        throw new Error("No 'rooms' array in server response");
       }
-      return response.data.rooms; 
+      return response.data.rooms;
     } catch (error) {
       console.error("[ChamberService] Error listing channels:", error.message);
       throw error;
@@ -116,15 +105,14 @@ export class ChamberService {
   }
 
   /**
-   * Checks if a room exists (case-insensitive name match).
+   * Checks if a room with the given name exists (case-insensitive).
    */
   async checkRoomExists(roomName) {
     try {
       const response = await this.client.get("/rooms");
-      const roomExists = response.data.rooms.some(
-        (room) => room.name.toLowerCase() === roomName.toLowerCase(),
+      return response.data.rooms.some(
+        (room) => room.name.toLowerCase() === roomName.toLowerCase()
       );
-      return roomExists;
     } catch (error) {
       console.error("[ChamberService] Error checking room existence:", error.message);
       throw error;
@@ -132,21 +120,21 @@ export class ChamberService {
   }
 
   /**
-   * Create a room if it doesn't exist.
-   * @param {Object} roomData
+   * Create a room if it doesn't already exist.
    */
   async createRoom(roomData) {
     try {
       const normalizedName = roomData.name.replace("#", "").toLowerCase();
-      if (await this.checkRoomExists(normalizedName)) {
-        console.log(`[ChamberService] Room "${roomData.name}" already exists`);
+      const exists = await this.checkRoomExists(normalizedName);
+      if (exists) {
+        console.log(`[ChamberService] Room "${roomData.name}" already exists.`);
         return;
       }
       const resp = await this.client.post("/rooms", roomData);
       if (resp.data?.error) {
         throw new Error(resp.data.error);
       }
-      console.log(`[ChamberService] Room "${roomData.name}" created successfully`);
+      console.log(`[ChamberService] Room "${roomData.name}" created.`);
     } catch (error) {
       console.error("[ChamberService] Room creation error:", error.message);
       throw error;
@@ -154,62 +142,46 @@ export class ChamberService {
   }
 
   /**
-   * Send a message to a room.
-   * @param {string} roomName 
-   * @param {Object} messageData 
+   * Send a message to the specified room.
    */
   async sendMessage(roomName, messageData) {
     try {
-      const normalizedRoomName = roomName.replace("#", "");
-      const response = await this.client.post(
-        `/rooms/${normalizedRoomName}/message`,
-        messageData,
-        {
-          headers: {
-            "x-api-key": this.apiKey,
-          },
-        },
-      );
+      const normalizedRoom = roomName.replace("#", "");
+      const response = await this.client.post(`/rooms/${normalizedRoom}/message`, messageData, {
+        headers: { "x-api-key": this.apiKey },
+      });
       console.log("[ChamberService] Message sent:", response.data);
-
       if (response.data?.error) {
         throw new Error(response.data.error);
       }
       return response.data;
     } catch (error) {
-      console.error(
-        "[ChamberService] Message sending error:",
-        error.response?.data || error.message,
-      );
+      console.error("[ChamberService] Message sending error:", error.response?.data || error.message);
       throw error;
     }
   }
 
   /**
-   * Subscribe to messages in a specific room at a given polling interval.
-   * @param {string} roomName
-   * @param {Function} callback - Called with each new message
-   * @param {number} pollInterval - default 5000ms
-   * @returns {Function} unsubscribe function
+   * Subscribes to a room's messages, polling at `pollInterval`.
+   * Callback receives an array of new messages each poll cycle.
+   * Returns an unsubscribe function.
    */
   subscribe(roomName, callback, pollInterval = 5000) {
     const normalizedRoom = roomName.replace("#", "").toLowerCase();
 
-    // Initialize subscriber set for this room if it doesn't exist
+    // Initialize subscription set if none exists
     if (!this.subscribers.has(normalizedRoom)) {
       this.subscribers.set(normalizedRoom, new Set());
+      // Use the current time as the "last seen" message time
       this.messageCache.set(normalizedRoom, new Date().toISOString());
     }
 
-    // Add subscriber
+    // Add the new subscriber
     this.subscribers.get(normalizedRoom).add(callback);
 
-    // Start polling if not already polling for this room
+    // If we're not already polling this room, start polling
     if (!this.pollingIntervals.has(normalizedRoom)) {
-      const intervalId = setInterval(
-        () => this.pollMessages(normalizedRoom),
-        pollInterval,
-      );
+      const intervalId = setInterval(() => this.pollMessages(normalizedRoom), pollInterval);
       this.pollingIntervals.set(normalizedRoom, intervalId);
     }
 
@@ -218,15 +190,15 @@ export class ChamberService {
   }
 
   /**
-   * Unsubscribe from a specific room's messages.
+   * Unsubscribe a specific callback from a room.
+   * If no more subscribers remain, polling for that room is stopped.
    */
   unsubscribe(roomName, callback) {
-    const subscribers = this.subscribers.get(roomName);
-    if (subscribers) {
-      subscribers.delete(callback);
-
-      // If no more subscribers, stop polling and clean up
-      if (subscribers.size === 0) {
+    const subs = this.subscribers.get(roomName);
+    if (subs) {
+      subs.delete(callback);
+      if (subs.size === 0) {
+        // Stop polling
         const intervalId = this.pollingIntervals.get(roomName);
         if (intervalId) {
           clearInterval(intervalId);
@@ -239,45 +211,43 @@ export class ChamberService {
   }
 
   /**
-   * Core polling logic to fetch new messages from a room.
-   * @private
+   * Poll the room's history endpoint, find newly arrived messages,
+   * and notify subscribers with an array of new messages.
    */
   async pollMessages(roomName) {
     try {
-      const response = await this.client.get(`/rooms/${roomName}/messages`);
-
-      // Validate response data
-      if (!response.data?.messages) {
-        throw new Error("Invalid response format, 'messages' missing");
+      const response = await this.client.get(`/rooms/${roomName}/history`);
+      if (!response?.data) {
+        throw new Error("Invalid response data");
+      }
+      if (response.data.error) {
+        throw new Error(response.data.error);
+      }
+      if (!response.data.messages) {
+        throw new Error("Response missing 'messages' array");
       }
 
-      const messages = response.data.messages;
-      const lastChecked = this.messageCache.get(roomName);
-
-      // Reset retry state on successful poll
+      // We have valid data
       this.resetRetryState(roomName);
 
-      // Filter and emit only newly arrived messages
-      const newMessages = messages.filter(
-        (msg) => new Date(msg.timestamp) > new Date(lastChecked),
+      const allMessages = response.data.messages;
+      const lastChecked = this.messageCache.get(roomName) || "1970-01-01T00:00:00Z";
+      const newMessages = allMessages.filter(
+        (msg) => new Date(msg.timestamp) > new Date(lastChecked)
       );
 
       if (newMessages.length > 0) {
-        // Update cache timestamp to the newest message
-        this.messageCache.set(
-          roomName,
-          newMessages[newMessages.length - 1].timestamp,
-        );
+        // Update last seen message time
+        const latestTimestamp = newMessages[newMessages.length - 1].timestamp;
+        this.messageCache.set(roomName, latestTimestamp);
 
-        // Notify all subscribers
-        const subscribers = this.subscribers.get(roomName);
-        if (subscribers) {
-          newMessages.forEach((message) => {
-            subscribers.forEach((callback) => callback(message));
-          });
+        // Notify each subscriber with the array of new messages
+        const subs = this.subscribers.get(roomName);
+        if (subs) {
+          subs.forEach((cb) => cb(newMessages));
         }
 
-        // Emit event for event-based consumers
+        // Emit an event for optional event-based listeners
         this.eventEmitter.emit("newMessages", {
           room: roomName,
           messages: newMessages,
@@ -289,9 +259,7 @@ export class ChamberService {
   }
 
   /**
-   * Event-based interface for listening to new messages across all rooms.
-   * @param {Function} listener - Invoked with { room, messages } object
-   * @returns {Function} to remove the listener
+   * Returns a function to stop listening to 'newMessages' events.
    */
   onNewMessages(listener) {
     this.eventEmitter.on("newMessages", listener);
@@ -299,18 +267,17 @@ export class ChamberService {
   }
 
   /**
-   * Stop all polling intervals and clear all subscriptions.
+   * Clean up everything: intervals, timeouts, subscribers, etc.
    */
   cleanup() {
-    // Clear all polling intervals
-    for (const [, intervalId] of this.pollingIntervals) {
+    // Clear intervals
+    for (const intervalId of this.pollingIntervals.values()) {
       clearInterval(intervalId);
     }
-
-    // Clear all retry timeouts
-    for (const [, retryState] of this.roomRetries) {
-      if (retryState.timeout) {
-        clearTimeout(retryState.timeout);
+    // Clear timeouts
+    for (const roomState of this.roomRetries.values()) {
+      if (roomState.timeout) {
+        clearTimeout(roomState.timeout);
       }
     }
 
@@ -322,29 +289,24 @@ export class ChamberService {
   }
 
   /**
-   * Retrieves up to 'limit' recent messages for a room.
+   * Fetch up to 'limit' messages from the room's history (for manual usage).
    */
   async getMessages(roomName, limit = 5) {
     try {
-      const normalizedRoomName = roomName.replace("#", "");
-      const response = await this.client.get(`/rooms/${normalizedRoomName}/messages`, {
-        params: { limit },
-      });
-      if (!response?.data?.messages) {
-        throw new Error("Invalid response format for message history");
+      const normalized = roomName.replace("#", "");
+      const response = await this.client.get(`/rooms/${normalized}/history`, { params: { limit } });
+      if (!response.data?.messages) {
+        throw new Error("No 'messages' array in response");
       }
       return response.data.messages;
     } catch (error) {
-      console.error(
-        `[ChamberService] Failed to get messages for '${roomName}':`,
-        error.message,
-      );
+      console.error(`[ChamberService] Failed to get messages for "${roomName}":`, error.message);
       return [];
     }
   }
 
   /**
-   * Retrieve or create a retry state object for a specific room.
+   * Retrieve or initialize retry state for a given room.
    */
   getRetryState(roomName) {
     if (!this.roomRetries.has(roomName)) {
@@ -358,52 +320,48 @@ export class ChamberService {
   }
 
   /**
-   * Reset the retry/cooldown state for a room back to defaults.
+   * Reset a room's error/cooldown counters.
    */
   resetRetryState(roomName) {
-    const retryState = this.getRetryState(roomName);
-    retryState.delay = INITIAL_RETRY_DELAY;
-    retryState.errors = 0;
-    if (retryState.timeout) {
-      clearTimeout(retryState.timeout);
-      retryState.timeout = null;
+    const state = this.getRetryState(roomName);
+    state.delay = INITIAL_RETRY_DELAY;
+    state.errors = 0;
+    if (state.timeout) {
+      clearTimeout(state.timeout);
+      state.timeout = null;
     }
   }
 
   /**
-   * Handle room polling errors with exponential backoff, unsubscribing temporarily.
+   * Handle errors in pollMessages with exponential backoff.
    */
   async handleRoomError(roomName, error) {
-    const retryState = this.getRetryState(roomName);
-    retryState.errors++;
+    const state = this.getRetryState(roomName);
+    state.errors++;
 
     console.warn(
-      `[ChamberService] Room "${roomName}" error (${retryState.errors}/${MAX_CONSECUTIVE_ERRORS}):`,
-      error.message,
+      `[ChamberService] Room "${roomName}" error (${state.errors}/${MAX_CONSECUTIVE_ERRORS}):`,
+      error.message
     );
 
-    if (retryState.errors >= MAX_CONSECUTIVE_ERRORS) {
+    if (state.errors >= MAX_CONSECUTIVE_ERRORS) {
       // Exponential backoff
-      retryState.delay = Math.min(retryState.delay * 2, MAX_RETRY_DELAY);
-      console.log(
-        `[ChamberService] Room "${roomName}" cooling down for ${
-          retryState.delay / 1000
-        }s`,
-      );
+      state.delay = Math.min(state.delay * 2, MAX_RETRY_DELAY);
+      console.log(`[ChamberService] Room "${roomName}" cooling down for ${state.delay / 1000}s`);
 
-      // Schedule next retry
-      if (retryState.timeout) clearTimeout(retryState.timeout);
-      retryState.timeout = setTimeout(() => {
+      // Schedule a retry
+      if (state.timeout) clearTimeout(state.timeout);
+      state.timeout = setTimeout(() => {
         console.log(`[ChamberService] Retrying room "${roomName}"`);
         this.resetRetryState(roomName);
         this.pollMessages(roomName).catch((e) =>
-          console.warn(`[ChamberService] Retry failed for "${roomName}":`, e.message),
+          console.warn(`[ChamberService] Retry failed for "${roomName}":`, e.message)
         );
-      }, retryState.delay);
+      }, state.delay);
 
-      // Temporarily unsubscribe from that room
-      const subscribers = this.subscribers.get(roomName);
-      if (subscribers) {
+      // Temporarily unsubscribe this room
+      const subs = this.subscribers.get(roomName);
+      if (subs) {
         this.subscribers.delete(roomName);
         const intervalId = this.pollingIntervals.get(roomName);
         if (intervalId) {
