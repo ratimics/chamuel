@@ -204,74 +204,7 @@ export async function handleText(chatId, openai, bot) {
         // 6. Update action timestamp and execute handler
         updateActionTimestamp(action);
 
-        // Special handling for imagine action
-        if (action === "imagine") {
-            // Set up one-time event listeners for this specific request
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(
-                    () => reject(new Error("Image generation timed out")),
-                    5 * 60000,
-                );
-            });
-
-            const imagePromise = new Promise((resolve) => {
-                const cleanup = () => {
-                    backgroundTasks.removeListener(
-                        "imageGenerated",
-                        successHandler,
-                    );
-                    backgroundTasks.removeListener("imageError", errorHandler);
-                };
-
-                const successHandler = (data) => {
-                    if (data.chatId === chatId) {
-                        cleanup();
-                        resolve({
-                            text:
-                                data.type === "gif"
-                                    ? "📹 Here's your animation!"
-                                    : "🖼️ Here's what I imagined!",
-                            imageUrl: data.imageUrl,
-                            filePath: data.filePath,
-                            buffer: data.buffer,
-                            continue: true,
-                        });
-                    }
-                };
-
-                const errorHandler = (data) => {
-                    if (data.chatId === chatId) {
-                        cleanup();
-                        resolve({
-                            text: "Hiss... I couldn't imagine an image this time.",
-                            continue: false,
-                        });
-                    }
-                };
-
-                backgroundTasks.once("imageGenerated", successHandler);
-                backgroundTasks.once("imageError", errorHandler);
-            });
-
-            // Start the background process
-            handleImagineBackground(chatId, message, bot);
-
-            try {
-                // Wait for either the image to complete or timeout
-                const result = await Promise.race([
-                    imagePromise,
-                    timeoutPromise,
-                ]);
-                return result;
-            } catch (error) {
-                // Handle timeout or other errors
-                return {
-                    text: "Hiss... The image generation took too long. Please try again later! 🐍",
-                    continue: false,
-                };
-            }
-        }
-
+        // Execute the action handler
         return await ACTIONS[action].handler(chatId, message, bot);
     } catch (error) {
         console.error("[handleText] Caught an error:", error);
@@ -326,29 +259,36 @@ async function handleThink(chatId, thinkingContent) {
 }
 
 async function handleImagine(chatId, message) {
-    console.log("[handleImagine] Generating an image...");
-    try {
-        const { buffer, type } =
-            await MediaService.generateMediaBuffer(message);
-        await XService.maybePostImage(buffer, message, type);
-        const filePath = await MediaService.saveMediaLocally(buffer, type);
-        const imageUrl = await MediaService.uploadMediaToS3(filePath);
-        return {
-            text:
-                type === "gif"
-                    ? "[[📹 video generated]]"
-                    : "[[🖼️ image generated]]",
-            imageUrl,
-            filePath,
-            continue: true,
-        };
-    } catch (error) {
-        console.error("[handleImagine] Failed to generate image:", error);
-        return {
-            text: "Hiss... I couldn't imagine an image this time.",
-            continue: false,
-        };
-    }
+    console.log("[handleImagine] Starting image generation...");
+    
+    // Send initial response
+    const response = {
+        text: "🎨 I'm working on imagining that... Check back in a moment! 🐍",
+        continue: false
+    };
+
+    // Start image generation in background
+    fireAndForget(async () => {
+        try {
+            const { buffer, type } = await MediaService.generateMediaBuffer(message);
+            await XService.maybePostImage(buffer, message, type);
+            const filePath = await MediaService.saveMediaLocally(buffer, type);
+            const imageUrl = await MediaService.uploadMediaToS3(filePath);
+            
+            // Send the generated image as a new message
+            await MessageService.storeAssistantMessage(chatId, [
+                { type: "text", text: "Here's what I imagined! 🎨" },
+                { type: "image", url: imageUrl }
+            ]);
+        } catch (error) {
+            console.error("[handleImagine] Failed to generate image:", error);
+            await MessageService.storeAssistantMessage(chatId, [
+                { type: "text", text: "Hiss... I couldn't imagine an image this time." }
+            ]);
+        }
+    });
+
+    return response;
 }
 
 // Add an event emitter for handling background tasks
