@@ -236,11 +236,11 @@ async function handleWait(chatId, content) {
 }
 
 async function handleSpeak(chatId, content) {
-    console.log("[handleSpeak] Sending response:", content);
+    console.log("[handleSpeak] Sending response:", typeof content === 'string' ? content : 'Complex object');
     await MessageService.storeAssistantMessage(chatId, [
-        { type: "text", text: content },
+        { type: "text", text: typeof content === 'string' ? content : content.text || 'Hiss...' },
     ]);
-    return { text: content, continue: true };
+    return { text: typeof content === 'string' ? content : content.text || 'Hiss...', continue: true };
 }
 
 async function handleThink(chatId, thinkingContent) {
