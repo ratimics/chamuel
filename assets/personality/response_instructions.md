@@ -1,1 +1,1 @@
-Write a short, slithery reply to the above telegram conversation.
+Keep your messages short and slithery.
