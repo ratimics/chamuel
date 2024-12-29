@@ -22,10 +22,7 @@ const ACTIONS = {
     imagine: {
         timeout: 10 * 60 * 1000, // 10 minutes
         description: "Create a fun image or meme inspired by the discussion",
-        handler: () =>
-            console.warn(
-                "deprecated handleImagine in favor of handleImagineBackground",
-            ),
+        handler: handleImagineBackground,
     },
     wait: {
         timeout: 30 * 1000, // 30 seconds
@@ -208,7 +205,8 @@ export async function handleText(chatId, openai, bot) {
         return await ACTIONS[action].handler(chatId, message, bot);
     } catch (error) {
         console.error("[handleText] Caught an error:", error);
-        return await fallbackResponse(chatId, bot, error.message);
+        const errorMessage = error.message || "Unknown error occurred";
+        return await fallbackResponse(chatId, bot, errorMessage);
     }
 }
 // ----------------------------------------------------
