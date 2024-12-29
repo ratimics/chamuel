@@ -312,41 +312,42 @@ import EventEmitter from "events";
 const backgroundTasks = new EventEmitter();
 
 async function handleImagineBackground(chatId, message, bot) {
-    console.log(
-        "[handleImagineBackground] Starting background image generation...",
-    );
+    console.log("[handleImagineBackground] Starting background image generation...");
+    
+    // Send initial response
+    await MessageService.storeAssistantMessage(chatId, [
+        { type: "text", text: "🎨 I'm working on imagining that... Check back in a moment! 🐍" }
+    ]);
 
     try {
         // Generate the image
-        const { buffer, type } =
-            await MediaService.generateMediaBuffer(message);
+        const { buffer, type } = await MediaService.generateMediaBuffer(message);
 
         // Handle social media posting and file saving in parallel
         const [filePath] = await Promise.all([
             MediaService.saveMediaLocally(buffer, type),
-            XService.maybePostImage(buffer, message, type),
+            XService.maybePostImage(buffer, message, type)
         ]);
 
         // Upload to S3
         const imageUrl = await MediaService.uploadMediaToS3(filePath);
 
-        // Emit success event with all necessary data
-        backgroundTasks.emit("imageGenerated", {
-            chatId,
-            type,
-            buffer,
-            imageUrl,
-            filePath,
-        });
+        // Store success message
+        await MessageService.storeAssistantMessage(chatId, [
+            { type: "text", text: "Here's what I imagined! 🎨" },
+            { type: "image", url: imageUrl }
+        ]);
+
+        return { text: "Image generated successfully!", continue: true };
     } catch (error) {
-        console.error(
-            "[handleImagineBackground] Failed to generate image:",
-            error,
-        );
-        backgroundTasks.emit("imageError", {
-            chatId,
-            error: error.message,
-        });
+        console.error("[handleImagineBackground] Failed to generate image:", error);
+        
+        // Store error message
+        await MessageService.storeAssistantMessage(chatId, [
+            { type: "text", text: "Hiss... I couldn't imagine an image this time." }
+        ]);
+
+        return { text: "Failed to generate image", error: error.message, continue: false };
     }
 }
 
