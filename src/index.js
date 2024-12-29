@@ -6,8 +6,8 @@ import { ensureDirectories } from "./setup.js";
 async function startBot() {
     try {
         await ensureDirectories();
-        await initializeTG();
-        await initializeGNON();
+        initializeTG();
+        initializeGNON();
     } catch (error) {
         console.error("Error starting bot:", error);
         process.exit(1);
