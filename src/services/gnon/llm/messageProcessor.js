@@ -35,6 +35,8 @@ export async function processLLMResponse(openai, context, systemPrompt, response
         // Add JSON format requirement and response instructions if needed
         if (requireJson) {
             config.response_format = { type: "json_object" };
+        }
+        if (responseInstructions) {   
             config.messages.push({ role: "user", content: responseInstructions });
         }
 

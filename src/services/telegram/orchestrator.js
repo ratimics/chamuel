@@ -152,7 +152,16 @@ export async function handleText(chatId, openai, bot) {
           temperature: 0.8,
         });
 
-        const parsed = JSON.parse(response.choices[0]?.message?.content) || {};
+        let parsed = {};
+
+        try { 
+          parsed = JSON.parse(response.choices[0]?.message?.content) || {};
+        } catch (error) {
+          parsed = { message: response.choices[0]?.message?.content };
+          if (!parsed.message) {
+            throw new Error("Failed to parse response: " + JSON.stringify(response));
+          }
+        }
 
         return {
           action: parsed.action,

@@ -294,7 +294,7 @@ export class ChamberService {
   async getMessages(roomName, limit = 5) {
     try {
       const normalized = roomName.replace("#", "");
-      const response = await this.client.get(`/rooms/${normalized}/history`, { params: { limit } });
+      const response = await this.client.get(`/rooms/${normalized}/messages`, { params: { limit } });
       if (!response.data?.messages) {
         throw new Error("No 'messages' array in response");
       }
