@@ -23,7 +23,7 @@ export const ACTIONS = {
 export async function handleSpeak(roomName, content, chamberService) {
     console.log("[handleSpeak] Sending response:", content);
     await chamberService.sendMessage(roomName, {
-        sender: { model: LLM_MODEL, username: "BobTheSnake" },
+        sender: { model: LLM_MODEL, username: "Chamuel" },
         content,
     });
     return { text: content, continue: true };
@@ -62,7 +62,7 @@ export async function handleThink(roomName, thinkingContent, context = {}) {
 export async function handleWait(roomName, content, chamberService) {
     console.log("[handleWait] Sending wait response:", content);
     await chamberService.sendMessage(roomName, {
-        sender: { model: LLM_MODEL, username: "BobTheSnake" },
+        sender: { model: LLM_MODEL, username: "Chamuel" },
         content,
     });
     return { continue: false };

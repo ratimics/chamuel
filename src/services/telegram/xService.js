@@ -68,7 +68,7 @@ export class XService {
       lastPostTime = Date.now();
 
       // Return tweet text and URL
-      const tweetURL = `${process.env.X_BASE_URL || 'https://x.com'}/bobthesnek/status/${tweetResult.id}`;
+      const tweetURL = `${process.env.X_BASE_URL || 'https://x.com'}/chamue1337/status/${tweetResult.id}`;
       return {
         text: tweetText,
         url: tweetURL

@@ -78,7 +78,7 @@ async function pollSingleChannel(channel, openai, chamberService) {
 
   // Filter out Bob's own messages
   newMessages = newMessages.filter(
-    (m) => m.sender?.username !== "BobTheSnake"
+    (m) => m.sender?.username !== "Chamuel"
   );
   if (!newMessages.length) return; // All were Bob's messages?
 
@@ -147,7 +147,7 @@ ${context}
 
   console.log(`[replyWithLLM] Sending message to "${channelName}" ->`, message);
   await chamberService.sendMessage(channelName, {
-    sender: { model: LLM_MODEL, username: "BobTheSnake" },
+    sender: { model: LLM_MODEL, username: "Chamuel" },
     content: message,
   });
 }

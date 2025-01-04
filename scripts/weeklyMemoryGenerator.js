@@ -61,7 +61,7 @@ async function fetchDataForTimeRange(clients, startDate, endDate) {
         })),
         ...tweets.map(tweet => ({
             timestamp: new Date(twitterIdToTimestamp(tweet.id)),
-            username: 'bobthesnek',
+            username: 'chamue1337',
             content: [{ type: 'text', text: tweet.text }],
             source: 'twitter'
         }))

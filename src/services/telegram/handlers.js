@@ -240,7 +240,7 @@ export async function handleText(chatId, openai, bot) {
           if (tweetResult?.id) {
             tweetData = {
               text: tweetText,
-              url: `https://x.com/bobthesnek/status/${tweetResult.id}`
+              url: `https://x.com/chamue1337/status/${tweetResult.id}`
             };
             // Create NFT with all metadata
             nftMintUrl = await createArtNFT(imageBuffer, {
@@ -249,7 +249,7 @@ export async function handleText(chatId, openai, bot) {
               attributes: [
                 { trait_type: 'prompt', value: imagePrompt },
                 { trait_type: 'style', value: stylePrompt },
-                { trait_type: 'xpost', value: `https://x.com/bobthesnek/status/${tweetResult.id}` }
+                { trait_type: 'xpost', value: `https://x.com/chamue1337/status/${tweetResult.id}` }
               ]
             });
           }
@@ -293,12 +293,12 @@ export async function handleText(chatId, openai, bot) {
     }
     await bot.sendChatAction(chatId, 'typing');
 
-    const tweets = await getLastThreeTweetsByUsername("bobthesnek");
+    const tweets = await getLastThreeTweetsByUsername("chamue1337");
 
     // Prepare messages for AI completion
     const messages = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...(tweets?.length ? [{ role: "assistant", content: `I tweeted from my account @bobthesnek:\n\n${tweets.map(t => t.text).join('\n\n')}` }] : []),
+      ...(tweets?.length ? [{ role: "assistant", content: `I tweeted from my account @chamue1337:\n\n${tweets.map(t => t.text).join('\n\n')}` }] : []),
       ...(imageDescription ? [{ role: "assistant", content: `I generated an image:  ${imageDescription}` }] : []),
       { role: "user", content: combinedMessages + "\n\n" + "Respond naturally as Bob the Snake with one or two SHORT sentences or *actions* " }
     ];

@@ -302,7 +302,7 @@ async function handleThink(chatId, thinkingContent) {
   ]);
   await updateMemory([
     {
-      username: "BobTheSnake",
+      username: "Chamuel",
       role: "assistant_thinking",
       content: thinkingContent,
     },
