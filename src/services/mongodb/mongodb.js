@@ -14,9 +14,22 @@ class MongoDBService {
 
   async connect() {
     try {
-      this.client = await MongoClient.connect(MONGODB_URI);
+      if (!MONGODB_URI) {
+        throw new Error('MONGODB_URI environment variable not set');
+      }
+      this.client = await MongoClient.connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+      });
       this.db = this.client.db(MONGODB_DB_NAME);
       console.log('Connected to MongoDB');
+      
+      // Handle connection loss
+      this.client.on('close', () => {
+        console.warn('MongoDB connection closed. Attempting to reconnect...');
+        setTimeout(() => this.connect(), 5000);
+      });
     } catch (error) {
       console.error('MongoDB connection error:', error);
       throw error;

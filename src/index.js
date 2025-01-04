@@ -6,6 +6,7 @@ import { ensureDirectories } from "./setup.js";
 async function startBot() {
     try {
         await ensureDirectories();
+        await mongoDBService.connect();
         initializeTG();
         initializeGNON();
     } catch (error) {

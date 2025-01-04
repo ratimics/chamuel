@@ -6,12 +6,17 @@ import path from 'path';
 
 export class JournalService {
   constructor() {
-    this.arweave = Arweave.init({
-      host: 'arweave.net',
-      port: 443,
-      protocol: 'https'
-    });
-    this.hashPath = CONFIG.PATHS.JOURNAL_HASH;
+    try {
+      this.arweave = Arweave.init({
+        host: 'arweave.net',
+        port: 443,
+        protocol: 'https'
+      });
+      this.hashPath = CONFIG.PATHS.JOURNAL_HASH;
+    } catch (error) {
+      console.error('Failed to initialize Arweave:', error);
+      throw error;
+    }
   }
 
   async loadJournal() {
