@@ -24,7 +24,7 @@ class MongoDBService {
       });
       this.db = this.client.db(MONGODB_DB_NAME);
       console.log('Connected to MongoDB');
-      
+
       // Handle connection loss
       this.client.on('close', () => {
         console.warn('MongoDB connection closed. Attempting to reconnect...');
@@ -32,8 +32,10 @@ class MongoDBService {
       });
     } catch (error) {
       console.error('MongoDB connection error:', error);
-      throw error;
+      // Don't throw, return error status
+      return { connected: false, error: error.message };
     }
+    return { connected: true };
   }
 
   async disconnect() {

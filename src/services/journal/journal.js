@@ -31,8 +31,9 @@ export class JournalService {
       }
       return { entries: [], previousVersion: null };
     } catch (error) {
-      console.warn('No existing journal found, creating new one');
-      return { entries: [], previousVersion: null };
+      console.warn('Error loading journal:', error.message);
+      // Return empty journal structure instead of throwing
+      return { entries: [], previousVersion: null, error: error.message };
     }
   }
 
