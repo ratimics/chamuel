@@ -1,11 +1,16 @@
-import { PinataService } from '../pinata/pinata.js';
+
+import Arweave from 'arweave';
 import { CONFIG } from '../../config/index.js';
 import fs from 'fs/promises';
 import path from 'path';
 
 export class JournalService {
   constructor() {
-    this.pinata = new PinataService();
+    this.arweave = Arweave.init({
+      host: 'arweave.net',
+      port: 443,
+      protocol: 'https'
+    });
     this.hashPath = CONFIG.PATHS.JOURNAL_HASH;
   }
 
@@ -13,7 +18,11 @@ export class JournalService {
     try {
       const hash = await this.getStoredHash();
       if (hash) {
-        return await this.pinata.retrievePin(hash);
+        const response = await this.arweave.transactions.getData(hash, {
+          decode: true,
+          string: true
+        });
+        return JSON.parse(response);
       }
       return { entries: [], previousVersion: null };
     } catch (error) {
@@ -31,9 +40,15 @@ export class JournalService {
         timestamp: new Date().toISOString()
       };
 
-      const result = await this.pinata.pinJSON(journalVersion);
-      await this.saveHashFile(result.IpfsHash);
-      return result.IpfsHash;
+      const transaction = await this.arweave.createTransaction({
+        data: JSON.stringify(journalVersion)
+      });
+
+      await this.arweave.transactions.sign(transaction);
+      await this.arweave.transactions.post(transaction);
+
+      await this.saveHashFile(transaction.id);
+      return transaction.id;
     } catch (error) {
       console.error('Error saving journal:', error);
       throw error;
@@ -57,6 +72,10 @@ export class JournalService {
   }
 
   async getJournalVersion(hash) {
-    return await this.pinata.retrievePin(hash);
+    const response = await this.arweave.transactions.getData(hash, {
+      decode: true,
+      string: true
+    });
+    return JSON.parse(response);
   }
 }
