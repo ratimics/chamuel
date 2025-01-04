@@ -12,7 +12,7 @@ const POLL_INTERVAL = 1 * 60 * 1000;
 const HOME_CHANNEL = "species-of-the-metastrata";
 
 // Import model from chamber service
-const { BOT_MODEL, BOT_NAME } = require("./chamberService.js");
+import { BOT_MODEL, BOT_NAME } from "./chamberService.js";
 
 /* 
    For each channel, we store:

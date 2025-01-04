@@ -5,8 +5,8 @@ import EventEmitter from "events";
 const INITIAL_RETRY_DELAY = 30000;       // 30 seconds
 const MAX_RETRY_DELAY = 30 * 60 * 1000; // 30 minutes
 const MAX_CONSECUTIVE_ERRORS = 5;
-const BOT_MODEL = "meta-llama/Llama-3.3-70B-Instruct";
-const BOT_NAME = "Chamuel";
+export const BOT_MODEL = "meta-llama/Llama-3.3-70B-Instruct";
+export const BOT_NAME = "Chamuel";
 
 export class ChamberService {
   constructor(apiUrl, apiKey) {
