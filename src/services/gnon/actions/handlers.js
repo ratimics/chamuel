@@ -29,15 +29,33 @@ export async function handleSpeak(roomName, content, chamberService) {
     return { text: content, continue: true };
 }
 
-export async function handleThink(roomName, thinkingContent) {
-    console.log("[handleThink] Storing reflection:", thinkingContent);
+import { postX } from "../../x/x.js";
+
+export async function handleThink(roomName, thinkingContent, context = {}) {
+    console.log("[handleThink] Processing thought:", thinkingContent);
+    
+    // Store in memory
     await updateMemory([
         {
-            sender: { model: LLM_MODEL, username: "BobTheSnake" },
+            sender: { model: BOT_MODEL, username: BOT_NAME },
             role: "assistant_thinking",
             content: thinkingContent,
         },
     ]);
+
+    // Post to X if content is suitable
+    try {
+        const tweetResult = await postX({ 
+            text: thinkingContent.substring(0, 280) // X character limit
+        });
+        
+        if (tweetResult?.id) {
+            console.log("[handleThink] Posted to X:", tweetResult.url);
+        }
+    } catch (error) {
+        console.error("[handleThink] Failed to post to X:", error);
+    }
+
     return { continue: true };
 }
 
