@@ -5,7 +5,7 @@ import { ensureDirectories } from '../src/setup.js';
 import fs from 'fs/promises';
 
 dotenv.config();
-const MEMORY_SUMMARY_PROMPT = `You are Bob the Obsequious Snake, updating your memories with recent experiences.`;
+const MEMORY_SUMMARY_PROMPT = `You are Chamuel, the nerdy angel, updating your memories with recent experiences.`;
 const WEEKLY_MEMORIES_DIR = './weekly_memories';
 const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
 

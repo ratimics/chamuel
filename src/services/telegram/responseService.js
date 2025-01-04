@@ -85,7 +85,7 @@ Current conversational context: ${context.situation || 'casual chat'}`;
             return completion.choices[0].message.content;
         } catch (error) {
             console.error('Error generating Bob response:', error);
-            return "嘶~ Oops! 出了点问题 something went wrong! *hides under rock embarrassed* 🙈";
+            return "Oh dear! *adjusts glasses nervously* A computational error occurred! 🤓";
         }
     }
 }
