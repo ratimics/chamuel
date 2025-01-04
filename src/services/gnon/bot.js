@@ -8,11 +8,11 @@ import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 // Poll interval in milliseconds (e.g., 10 seconds)
 const POLL_INTERVAL = 1 * 60 * 1000;  
 
-// Which channel is Bob's "home"
-const HOME_CHANNEL = "serpent-pit";
+// Which channel is Chamuel's "home"
+const HOME_CHANNEL = "species-of-the-metastrata";
 
-// Which model to use
-const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
+// Import model from chamber service
+const { BOT_MODEL, BOT_NAME } = require("./chamberService.js");
 
 /* 
    For each channel, we store:
@@ -76,9 +76,9 @@ async function pollSingleChannel(channel, openai, chamberService) {
 
   if (!newMessages.length) return; // No new messages
 
-  // Filter out Bob's own messages
+  // Filter out our own messages
   newMessages = newMessages.filter(
-    (m) => m.sender?.username !== "Chamuel"
+    (m) => m.sender?.username !== BOT_NAME
   );
   if (!newMessages.length) return; // All were Bob's messages?
 
@@ -147,7 +147,7 @@ ${context}
 
   console.log(`[replyWithLLM] Sending message to "${channelName}" ->`, message);
   await chamberService.sendMessage(channelName, {
-    sender: { model: LLM_MODEL, username: "Chamuel" },
+    sender: { model: BOT_MODEL, username: BOT_NAME },
     content: message,
   });
 }
