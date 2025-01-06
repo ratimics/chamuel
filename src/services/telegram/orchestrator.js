@@ -18,7 +18,12 @@ import EventEmitter from "events";
 const ACTIONS = {
   speak: {
     timeout: 3 * 10 * 1000, // 30 seconds
-    description: "Say something relevant to the conversation",
+    description: "Respond to the conversation",
+    handler: handleSpeak,
+  },
+  respond: {
+    timeout: 3 * 10 * 1000, // 30 seconds
+    description: "Respond to the conversation",
     handler: handleSpeak,
   },
   think: {
