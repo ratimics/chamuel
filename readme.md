@@ -105,7 +105,7 @@ A multi-platform AI bot system that combines social media engagement, content ge
 - Captures and analyzes mentions
 - Rate limit handling:
   ```javascript
-  async function postX(params, imageBuffer) {
+  async function post(params, imageBuffer) {
     if (Date.now() < rateLimitReset) {
       console.log(`Rate limited, retry after ${rateLimitReset}`);
       return null;

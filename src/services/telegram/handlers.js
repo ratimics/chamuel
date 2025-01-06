@@ -1,7 +1,7 @@
 import { CONFIG, SYSTEM_PROMPT } from '../../config/index.js';
 import { generateImage, downloadImage } from '../../utils/imageGenerator.js';
 
-import { postX } from '../x/x.js';
+import { XService } from '../x/xService.js';
 
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
@@ -229,7 +229,7 @@ export async function handleText(chatId, openai, bot) {
 
           // Post to X with retry
           const tweetResult = await retry(
-            () => postX({ text: tweetText }, '', imageBuffer),
+            () => XService.post({ text: tweetText }, '', imageBuffer),
             2
           );
 

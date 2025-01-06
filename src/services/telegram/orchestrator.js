@@ -429,7 +429,7 @@ async function handlePost(chatId, content, bot) {
   
   try {
     // Post to X with retry
-    const tweetResult = await retry(() => postX({ text: content }), 2);
+    const tweetResult = await retry(() => XService.post({ text: content }), 2);
 
     if (!tweetResult?.id) {
       console.error("[handlePost] Failed to post tweet");
