@@ -36,6 +36,11 @@ const ACTIONS = {
     description: "Create a fun image or meme inspired by the discussion",
     handler: handleImagineBackground,
   },
+  post: {
+    timeout: 5 * 60 * 1000, // 5 minutes
+    description: "Post a text tweet to X",
+    handler: handlePost,
+  },
   wait: {
     timeout: 30 * 1000, // 30 seconds
     description: "Pause and wait for someone else to contribute",
@@ -417,3 +422,34 @@ export { state, ACTIONS, backgroundTasks };
 // ----------------------------------------------------
 // endregion
 // ----------------------------------------------------
+
+
+async function handlePost(chatId, content, bot) {
+  console.log("[handlePost] Posting tweet:", content);
+  
+  try {
+    // Post to X with retry
+    const tweetResult = await retry(() => postX({ text: content }), 2);
+
+    if (!tweetResult?.id) {
+      console.error("[handlePost] Failed to post tweet");
+      return await handleSpeak(chatId, "Hiss... I couldn't post that tweet.");
+    }
+
+    // Generate tweet URL
+    const tweetURL = `${process.env.X_BASE_URL || 'https://x.com'}/bobthesnek/status/${tweetResult.id}`;
+    
+    // Store success message with tweet link
+    await MessageService.storeAssistantMessage(chatId, [
+      { type: "text", text: `🐦 Posted tweet! Check it out here: ${tweetURL}` },
+    ]);
+
+    return { 
+      text: `Tweet posted successfully! ${tweetURL}`,
+      continue: true 
+    };
+  } catch (error) {
+    console.error("[handlePost] Error posting tweet:", error);
+    return await handleSpeak(chatId, "Hiss... Something went wrong while posting the tweet.");
+  }
+}
