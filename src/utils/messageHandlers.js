@@ -368,9 +368,10 @@ async function startMessageProcessing(bot, openai) {
 
           messageQueue.removeMessage(chatId); // Remove processed message
         } catch (error) {
+          const lastError = error.message || 'Unknown error';
           consecutiveErrors++;
           console.error(
-            `Error processing messages for chat ${chatId}: ${error.message}`,
+            `Error processing messages for chat ${chatId}: ${lastError}`,
           );
           if (consecutiveErrors >= maxConsecutiveErrors) {
             console.error(
