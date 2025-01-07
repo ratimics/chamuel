@@ -237,11 +237,6 @@ export async function handleText(chatId, openai, bot) {
       const errorMessage = error.message || "Unknown error occurred";
       return await fallbackResponse(chatId, bot, errorMessage);
     }
-  } catch (error) {
-    console.error("[handleText] Unexpected error:", error);
-    // Do not send anything to the chat
-    return null;
-  }
 }
 
 // ----------------------------------------------------
