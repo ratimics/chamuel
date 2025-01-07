@@ -96,6 +96,18 @@ export async function setupMessageHandlers(bot, openai) {
       try {
         const chatId = msg.chat.id;
 
+        // Skip processing if message is null or undefined
+        if (!msg) {
+          console.log("Received null or undefined message");
+          return;
+        }
+
+        // Handle non-text messages
+        if (!msg.text && !msg.photo) {
+          console.log("Message contains no text or photo, skipping");
+          return;
+        }
+
         // if it contains a Ca ignore it
         if (msg.text && msg.text.toLowerCase().includes("ca")) {
           return;
