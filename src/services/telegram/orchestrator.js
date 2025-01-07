@@ -106,15 +106,30 @@ Always pick the action that fits best with the given context. Respond in a struc
 // ----------------------------------------------------
 export async function handleText(chatId, openai, bot) {
   try {
-    // Track processed messages
+    // Initialize message tracking
     if (!state.processedMessages) {
       state.processedMessages = new Set();
     }
 
-    // 1. Retrieve chat history
+    // Get latest message and check if already processed
+    const history = await MessageService.fetchChatHistory(chatId, 1);
+    if (!history.length) return null;
+
+    const latestMessage = history[0];
+    const messageKey = `${chatId}-${latestMessage.timestamp}`;
+    
+    if (state.processedMessages.has(messageKey)) {
+      console.log("[handleText] Message already processed, skipping");
+      return null;
+    }
+
+    // Mark message as processed immediately
+    state.processedMessages.add(messageKey);
+
+    // Get full history for context
     console.log("[handleText] Step 1: Retrieving chat history...");
-    const history = await MessageService.fetchChatHistory(chatId, 20);
-    console.log(`[handleText] Step 1: Retrieved ${history.length} messages.`);
+    const fullHistory = await MessageService.fetchChatHistory(chatId, 20);
+    console.log(`[handleText] Step 1: Retrieved ${fullHistory.length} messages.`);
 
     if (!history.length) {
       console.log("[handleText] Step 1: No history found, returning null.");
@@ -176,7 +191,10 @@ export async function handleText(chatId, openai, bot) {
           temperature: 0.8,
         });
 
-        const parsed = JSON.parse(response.choices[0]?.message?.content) || {};
+        const content = response.choices[0]?.message?.content;
+        if (!content) throw new Error("Empty LLM response");
+        const parsed = JSON.parse(content.trim());
+        if (!parsed || typeof parsed !== 'object') throw new Error("Invalid JSON response");
 
         return {
           action: parsed.action,
