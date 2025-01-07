@@ -8,7 +8,8 @@ import { setupMessageHandlers } from '../../utils/messageHandlers.js';
 import axios from 'axios';
 import axiosRetry from 'axios-retry';
 
-import { openai } from '../../config/index.js'; // Import OpenAI instance
+import { createOpenAIClient } from '../ai/openai.js';
+const openai = createOpenAIClient();
 
 import { MessageService } from './messageService.js';
 import { MediaService } from '../media/mediaService.js';
@@ -85,9 +86,10 @@ class TelegramBotService {
       try {
         await MessageService.storeAssistantMessage(msg.chat.id, [{
           type: 'text',
-          text: msg.text
+          text: msg.text,
+          username: msg.from.username || 'unknown'
         }]);
-        await setupMessageHandlers(this.bot, openai);
+        await setupMessageHandlers(this.bot, openai, msg);
       } catch (error) {
         console.error('Error handling text message:', error);
       }
@@ -223,7 +225,14 @@ async function deleteWebhook() {
 // Initialize the bot (This is now largely handled by the class)
 export async function initialize() {
   try {
-    await deleteWebhook(); // Added webhook deletion
+    // Clean up any existing webhooks and stop polling
+    await deleteWebhook();
+    await botService.stop();
+    
+    // Wait a moment before starting
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Start fresh
     await botService.start();
     console.log('Bot initialization complete');
 
