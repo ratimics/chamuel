@@ -350,13 +350,18 @@ async function handlePost(chatId, content, bot) {
     // Generate tweet URL
     const tweetURL = `${process.env.X_BASE_URL || "https://x.com"}/bobthesnek/status/${tweetResult.id}`;
 
-    // Store success message with tweet link
+    // Store success message with tweet link using HTML formatting
     await MessageService.storeAssistantMessage(chatId, [
-      { type: "text", text: `🐦 Posted tweet! Check it out here: ${tweetURL}` },
+      { 
+        type: "text", 
+        text: `🐦 Posted tweet! <a href="${tweetURL}">Check it out here</a>`,
+        parse_mode: "HTML"
+      },
     ]);
 
     return {
-      text: `Tweet posted successfully! ${tweetURL}`,
+      text: `🐦 Posted tweet! <a href="${tweetURL}">Check it out here</a>`,
+      parse_mode: "HTML",
       continue: true,
     };
   } catch (error) {
