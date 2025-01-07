@@ -1,7 +1,7 @@
 // ----------------------------------------------------
 // region: Imports & Constants
 // ----------------------------------------------------
-import { updateMemory } from "../memory/memoryService.js";
+import { updateMemory, loadMemory } from "../memory/memoryService.js";
 import { retry } from "../../utils/retry.js";
 import { MessageService, MediaService, XService } from "./index.js";
 
