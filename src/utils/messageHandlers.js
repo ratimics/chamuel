@@ -373,6 +373,7 @@ async function startMessageProcessing(bot, openai) {
           console.error(
             `Error processing messages for chat ${chatId}: ${errorMessage}`,
           );
+          return { error: errorMessage, continue: false }; // Return error info
           if (consecutiveErrors >= maxConsecutiveErrors) {
             console.error(
               "Too many consecutive errors, restarting processing...",
