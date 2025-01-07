@@ -1,10 +1,7 @@
 // Required imports
 import dotenv from 'dotenv';
 import TelegramBot from 'node-telegram-bot-api';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { promisify } from 'util';
+
 import { CONFIG } from '../../config/index.js';
 
 import { setupMessageHandlers } from '../../utils/messageHandlers.js';
@@ -13,7 +10,6 @@ import axiosRetry from 'axios-retry';
 
 import { openai } from '../../config/index.js'; // Import OpenAI instance
 
-import { FileOps } from '../../utils/mediaHandlers.js';
 import { MessageService } from './messageService.js';
 import { MediaService } from '../media/mediaService.js';
 
@@ -45,47 +41,9 @@ axiosRetry(axios, {
   }
 });
 
-// Promisify readFile and writeFile
-const readFileAsync = promisify(fs.readFile);
-const writeFileAsync = promisify(fs.writeFile);
-
-
-// Utility functions for file operations
-const FileOps = {
-  async readJSON(filepath) {
-    try {
-      const data = await readFileAsync(filepath, 'utf-8');
-      return JSON.parse(data);
-    } catch (error) {
-      console.error(`Error reading ${filepath}:`, error);
-      return null;
-    }
-  },
-
-  async writeJSON(filepath, data) {
-    try {
-      await writeFileAsync(filepath, JSON.stringify(data, null, 2));
-      return true;
-    } catch (error) {
-      console.error(`Error writing ${filepath}:`, error);
-      return false;
-    }
-  }
-};
-
 // Load environment variables
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Bot state management (This part might be redundant with the new class)
-const state = {
-  chatHistories: {},
-  lastResponseTimes: {},
-  messageQueues: {},
-  processedMessages: new Set(),
-};
 
 class TelegramBotService {
   constructor() {
@@ -291,6 +249,3 @@ export async function initialize() {
     }
   }
 }
-
-// Use dynamic import for modules that might use require (This is largely handled now)
-// const loadDependencies = async () => { ... }
