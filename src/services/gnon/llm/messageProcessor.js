@@ -60,12 +60,32 @@ function isActionAllowed(actionName, lastActionTimes) {
 }
 
 function parseJSONWithExtraction(rawString) {
-    const startIdx = rawString.indexOf("{");
-    const endIdx = rawString.lastIndexOf("}");
+    try {
+        // First try direct JSON parse
+        return JSON.parse(rawString);
+    } catch (e) {
+        // Look for JSON object boundaries
+        const startIdx = rawString.indexOf("{");
+        const endIdx = rawString.lastIndexOf("}");
 
-    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-        throw new Error("No valid JSON object found in the string.");
+        if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+            // Default to speak action if no valid JSON found
+            return {
+                action: "speak",
+                message: rawString.trim()
+            };
+        }
+
+        // Extract and parse the JSON portion
+        const jsonStr = rawString.slice(startIdx, endIdx + 1).trim();
+        try {
+            return JSON.parse(jsonStr);
+        } catch (err) {
+            // Fallback to speak action if JSON parsing fails
+            return {
+                action: "speak",
+                message: rawString.trim()
+            };
+        }
     }
-
-    return JSON.parse(rawString.slice(startIdx, endIdx + 1).trim());
 }
