@@ -390,9 +390,10 @@ Create a post that captures the essence of these experiences in my unique snake 
     };
   } catch (error) {
     console.error("[handlePost] Error in post process:", error);
-    return await handleSpeak(
-      chatId,
-      "Hiss... Something went wrong while creating and posting my thoughts.",
-    );
+    return {
+      text: "Hiss... Something went wrong while creating and posting my thoughts.",
+      parse_mode: "HTML",
+      continue: true,
+    };
   }
 }
