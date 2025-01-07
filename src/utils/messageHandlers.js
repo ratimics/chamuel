@@ -363,12 +363,12 @@ async function startMessageProcessing(bot, openai) {
       const chats = messageQueue.getAllChats();
 
       for (const chatId of chats) {
+        let lastError;
         try {
           await processNextMessage(bot, openai, chatId);
-
           messageQueue.removeMessage(chatId); // Remove processed message
         } catch (error) {
-          const lastError = error.message || 'Unknown error';
+          lastError = error.message || 'Unknown error';
           consecutiveErrors++;
           console.error(
             `Error processing messages for chat ${chatId}: ${lastError}`,
