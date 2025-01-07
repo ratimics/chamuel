@@ -106,12 +106,31 @@ Always pick the action that fits best with the given context. Respond in a struc
 // ----------------------------------------------------
 export async function handleText(chatId, openai, bot) {
   try {
-    // 1. Retrieve chat history
-    const history = await MessageService.fetchChatHistory(chatId, 20);
-    if (!history.length) return null; // do nothing if no history
+    // Track processed messages
+    if (!state.processedMessages) {
+      state.processedMessages = new Set();
+    }
 
-    try {
-      // 1. Retrieve chat history
+    // 1. Retrieve chat history
+    console.log("[handleText] Step 1: Retrieving chat history...");
+    const history = await MessageService.fetchChatHistory(chatId, 20);
+    console.log(`[handleText] Step 1: Retrieved ${history.length} messages.`);
+
+    if (!history.length) {
+      console.log("[handleText] Step 1: No history found, returning null.");
+      return null;
+    }
+
+    // Check if latest message was already processed
+    const latestMessage = history[history.length - 1];
+    const messageKey = `${chatId}-${latestMessage.timestamp}`;
+    
+    if (state.processedMessages.has(messageKey)) {
+      console.log("[handleText] Message already processed, skipping");
+      return null;
+    }
+    
+    state.processedMessages.add(messageKey);
       console.log("[handleText] Step 1: Retrieving chat history...");
       const history = await MessageService.fetchChatHistory(chatId, 20);
       console.log(`[handleText] Step 1: Retrieved ${history.length} messages.`);
