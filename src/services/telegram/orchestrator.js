@@ -4,6 +4,7 @@
 import { updateMemory, loadMemory } from "../memory/memoryService.js";
 import { retry } from "../../utils/retry.js";
 import { MessageService, MediaService, XService } from "./index.js";
+import { createOpenAIClient } from "../ai/openai.js";
 
 import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 import EventEmitter from "events";

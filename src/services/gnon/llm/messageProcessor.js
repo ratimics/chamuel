@@ -61,8 +61,9 @@ function isActionAllowed(actionName, lastActionTimes) {
 
 function parseJSONWithExtraction(rawString) {
     try {
-        // First try direct JSON parse
-        return JSON.parse(rawString);
+        // First try direct JSON parse after cleaning
+        const cleaned = rawString.replace(/^\s*[\r\n]+|[\r\n]+\s*$/g, '');
+        return JSON.parse(cleaned);
     } catch (e) {
         // Look for JSON object boundaries
         const startIdx = rawString.indexOf("{");
@@ -76,8 +77,12 @@ function parseJSONWithExtraction(rawString) {
             };
         }
 
-        // Extract and parse the JSON portion
-        const jsonStr = rawString.slice(startIdx, endIdx + 1).trim();
+        // Extract and parse the JSON portion with extra cleaning
+        const extracted = rawString.slice(startIdx, endIdx + 1);
+        const cleaned = extracted.replace(/[\u0000-\u001F]+/g, '').trim();
+        try {
+            return JSON.parse(cleaned);
+        } catch (err) {
         try {
             return JSON.parse(jsonStr);
         } catch (err) {
