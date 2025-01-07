@@ -112,10 +112,13 @@ export async function handleText(chatId, openai, bot) {
     }
 
     // Get latest message and check if already processed
-    const history = await MessageService.fetchChatHistory(chatId, 1);
-    if (!history.length) return null;
+    const history = await MessageService.fetchChatHistory(chatId, 20);
+    if (!history.length) {
+      console.log("[handleText] No history found, returning null.");
+      return null;
+    }
 
-    const latestMessage = history[0];
+    const latestMessage = history[history.length - 1];
     const messageKey = `${chatId}-${latestMessage.timestamp}`;
     
     if (state.processedMessages.has(messageKey)) {
@@ -126,19 +129,7 @@ export async function handleText(chatId, openai, bot) {
     // Mark message as processed immediately
     state.processedMessages.add(messageKey);
 
-    // Get full history for context
-    console.log("[handleText] Step 1: Retrieving chat history...");
-    const fullHistory = await MessageService.fetchChatHistory(chatId, 20);
-    console.log(`[handleText] Step 1: Retrieved ${fullHistory.length} messages.`);
-
-    if (!history.length) {
-      console.log("[handleText] Step 1: No history found, returning null.");
-      return null;
-    }
-
-    // Check if latest message was already processed
-    const latestMessage = history[history.length - 1];
-    const messageKey = `${chatId}-${latestMessage.timestamp}`;
+    console.log("[handleText] Step 1: Retrieved", history.length, "messages");
     
     if (state.processedMessages.has(messageKey)) {
       console.log("[handleText] Message already processed, skipping");
