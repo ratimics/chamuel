@@ -275,16 +275,30 @@ async function processNextMessage(bot, openai, chatId) {
         if (remainingCycles <= 0) return;
 
         const response = await handleText(chatId, openai, bot);
+        
+        // Skip if response is null or invalid
+        if (!response) {
+          console.log(`[processNextMessage] No valid response for chat ${chatId}`);
+          return { continue: false };
+        }
 
-        // Store assistant's response in MongoDB
-        await mongoDBService.getCollection("messages").insertOne({
-          chatId,
-          content: [
-            { type: "text", text: response.text, imageUrl: response.imageUrl },
-          ],
-          role: "assistant",
-          timestamp: Date.now(),
-        });
+        // Store assistant's response in MongoDB with null checks
+        const content = [];
+        if (response.text) {
+          content.push({ type: "text", text: response.text });
+        }
+        if (response.imageUrl) {
+          content.push({ type: "image", imageUrl: response.imageUrl });
+        }
+
+        if (content.length > 0) {
+          await mongoDBService.getCollection("messages").insertOne({
+            chatId,
+            content,
+            role: "assistant",
+            timestamp: Date.now(),
+          });
+        }
 
         // Handle regular responses
         if (response.text) {
