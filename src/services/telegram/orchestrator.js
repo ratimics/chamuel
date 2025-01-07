@@ -131,14 +131,6 @@ export async function handleText(chatId, openai, bot) {
     }
     
     state.processedMessages.add(messageKey);
-      console.log("[handleText] Step 1: Retrieving chat history...");
-      const history = await MessageService.fetchChatHistory(chatId, 20);
-      console.log(`[handleText] Step 1: Retrieved ${history.length} messages.`);
-
-      if (!history.length) {
-        console.log("[handleText] Step 1: No history found, returning null.");
-        return null;
-      }
 
       // 2. Combine messages into a single string
       console.log("[handleText] Step 2: Combining messages...");
