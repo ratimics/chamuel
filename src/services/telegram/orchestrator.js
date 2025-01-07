@@ -1,10 +1,9 @@
 // ----------------------------------------------------
 // region: Imports & Constants
 // ----------------------------------------------------
-import { updateMemory, loadMemory } from "../memory/memoryService.js";
+import { updateMemory } from "../memory/memoryService.js";
 import { retry } from "../../utils/retry.js";
 import { MessageService, MediaService, XService } from "./index.js";
-import { createOpenAIClient } from "../ai/openai.js";
 
 import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 import EventEmitter from "events";
@@ -36,6 +35,11 @@ const ACTIONS = {
     timeout: 10 * 60 * 1000, // 10 minutes
     description: "Create a fun image or meme inspired by the discussion",
     handler: handleImagineBackground,
+  },
+  post: {
+    timeout: 5 * 60 * 1000, // 5 minutes
+    description: "Post a text tweet to X",
+    handler: handlePost,
   },
   wait: {
     timeout: 30 * 1000, // 30 seconds
@@ -271,8 +275,6 @@ async function handleThink(chatId, thinkingContent) {
       content: thinkingContent,
     },
   ]);
-
-  await handlePost(chatId, thinkingContent);
   return { continue: true };
 }
 
@@ -337,34 +339,11 @@ export { state, ACTIONS, backgroundTasks };
 // ----------------------------------------------------
 
 async function handlePost(chatId, content, bot) {
-  console.log("[handlePost] Starting post process");
+  console.log("[handlePost] Posting tweet:", content);
 
   try {
-    // Load and summarize recent memories
-    const memory = await loadMemory();
-    const openai = createOpenAIClient();
-
-    // Generate post content based on memories
-    const postPrompt = `As Bob the Snake, review these memories and create an engaging social media post (max 280 chars):
-
-Previous memories: ${memory}
-Current thought: ${content}
-
-Create a post that captures the essence of these experiences in my unique snake personality.`;
-
-    const response = await openai.chat.completions.create({
-      model: "nousresearch/hermes-3-llama-3.1-405b",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: postPrompt }
-      ],
-      temperature: 0.8,
-    });
-
-    const postContent = response.choices[0].message.content;
-
     // Post to X with retry
-    const tweetResult = await retry(() => XService.post({ text: postContent }), 2);
+    const tweetResult = await retry(() => XService.post({ text: content }), 2);
 
     if (!tweetResult?.id) {
       console.error("[handlePost] Failed to post tweet");
@@ -374,26 +353,20 @@ Create a post that captures the essence of these experiences in my unique snake 
     // Generate tweet URL
     const tweetURL = `${process.env.X_BASE_URL || "https://x.com"}/bobthesnek/status/${tweetResult.id}`;
 
-    // Send the message in Telegram with the post content and link
+    // Store success message with tweet link
     await MessageService.storeAssistantMessage(chatId, [
-      { 
-        type: "text", 
-        text: `🐍 Here's what I posted:\n\n${postContent}\n\n🐦 <a href="${tweetURL}">View on X</a>`,
-        parse_mode: "HTML"
-      },
+      { type: "text", text: `🐦 Posted tweet! Check it out here: ${tweetURL}` },
     ]);
 
     return {
-      text: `🐍 Posted successfully! <a href="${tweetURL}">View on X</a>`,
-      parse_mode: "HTML",
+      text: `Tweet posted successfully! ${tweetURL}`,
       continue: true,
     };
   } catch (error) {
-    console.error("[handlePost] Error in post process:", error);
-    return {
-      text: "Hiss... Something went wrong while creating and posting my thoughts.",
-      parse_mode: "HTML",
-      continue: true,
-    };
+    console.error("[handlePost] Error posting tweet:", error);
+    return await handleSpeak(
+      chatId,
+      "Hiss... Something went wrong while posting the tweet.",
+    );
   }
 }

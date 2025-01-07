@@ -1,15 +1,12 @@
 import OpenAI from "openai";
 import { ChamberService } from "./chamberService.js";
-import {
-  processLLMResponse,
-  formatMessagesForContext,
-} from "./llm/messageProcessor.js";
+import { processLLMResponse, formatMessagesForContext } from "./llm/messageProcessor.js";
 import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 
 /* ------------------ CONFIG ------------------ */
 
 // Poll interval in milliseconds (e.g., 10 seconds)
-const POLL_INTERVAL = 3 * 60 * 1000;
+const POLL_INTERVAL = 1 * 60 * 1000;  
 
 // Which channel is Bob's "home"
 const HOME_CHANNEL = "serpent-pit";
@@ -22,7 +19,7 @@ const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
     - lastRespondedTimestamp: the latest message timestamp we have responded to
     - generalMessageCount: how many new messages from others since last respond 
 */
-const channelStateMap = new Map();
+const channelStateMap = new Map(); 
 // e.g. channelStateMap.get("general") => { lastRespondedTimestamp: "...", generalMessageCount: 5 }
 
 /* ------------------ UTILITY ------------------ */
@@ -70,7 +67,7 @@ async function pollSingleChannel(channel, openai, chamberService) {
   if (chState.lastRespondedTimestamp) {
     const lastTime = new Date(chState.lastRespondedTimestamp).getTime();
     newMessages = rawMessages.filter(
-      (m) => new Date(m.timestamp).getTime() > lastTime,
+      (m) => new Date(m.timestamp).getTime() > lastTime
     );
   } else {
     // If we never responded, treat *all* as new
@@ -80,7 +77,9 @@ async function pollSingleChannel(channel, openai, chamberService) {
   if (!newMessages.length) return; // No new messages
 
   // Filter out Bob's own messages
-  newMessages = newMessages.filter((m) => m.sender?.username !== "BobTheSnake");
+  newMessages = newMessages.filter(
+    (m) => m.sender?.username !== "BobTheSnake"
+  );
   if (!newMessages.length) return; // All were Bob's messages?
 
   // If there's at least one new message, the latest timestamp among them:
@@ -132,7 +131,7 @@ ${context}
     prompt,
     SYSTEM_PROMPT,
     RESPONSE_INSTRUCTIONS,
-    false,
+    false
   );
 
   if (!parsed || typeof parsed !== "object") {
@@ -186,7 +185,7 @@ export async function initialize() {
     // Create the ChamberService
     const chamberService = new ChamberService(
       process.env.ECHOCHAMBER_API_URL,
-      process.env.ECHOCHAMBER_API_KEY,
+      process.env.ECHOCHAMBER_API_KEY
     );
     await chamberService.verifyConnection();
 
@@ -204,18 +203,13 @@ export async function initialize() {
         tags: ["serpent", "pit"],
       });
     } catch (err) {
-      console.warn(
-        `[initialize] Could not create/find home channel '${HOME_CHANNEL}':`,
-        err,
-      );
+      console.warn(`[initialize] Could not create/find home channel '${HOME_CHANNEL}':`, err);
     }
 
     // Start the polling loop
     pollAllChannels(chamberService, openai);
 
-    console.log(
-      `[initialize] Bot is live. Polling every ${POLL_INTERVAL / 1000} seconds.`,
-    );
+    console.log(`[initialize] Bot is live. Polling every ${POLL_INTERVAL / 1000} seconds.`);
 
     // Graceful shutdown
     const cleanup = () => {
