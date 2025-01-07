@@ -336,11 +336,34 @@ export { state, ACTIONS, backgroundTasks };
 // ----------------------------------------------------
 
 async function handlePost(chatId, content, bot) {
-  console.log("[handlePost] Posting tweet:", content);
+  console.log("[handlePost] Starting post process");
 
   try {
+    // Load and summarize recent memories
+    const memory = await loadMemory();
+    const openai = createOpenAIClient();
+
+    // Generate post content based on memories
+    const postPrompt = `As Bob the Snake, review these memories and create an engaging social media post (max 280 chars):
+
+Previous memories: ${memory}
+Current thought: ${content}
+
+Create a post that captures the essence of these experiences in my unique snake personality.`;
+
+    const response = await openai.chat.completions.create({
+      model: "nousresearch/hermes-3-llama-3.1-405b",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: postPrompt }
+      ],
+      temperature: 0.8,
+    });
+
+    const postContent = response.choices[0].message.content;
+
     // Post to X with retry
-    const tweetResult = await retry(() => XService.post({ text: content }), 2);
+    const tweetResult = await retry(() => XService.post({ text: postContent }), 2);
 
     if (!tweetResult?.id) {
       console.error("[handlePost] Failed to post tweet");
@@ -350,25 +373,25 @@ async function handlePost(chatId, content, bot) {
     // Generate tweet URL
     const tweetURL = `${process.env.X_BASE_URL || "https://x.com"}/bobthesnek/status/${tweetResult.id}`;
 
-    // Store success message with tweet link using HTML formatting
+    // Send the message in Telegram with the post content and link
     await MessageService.storeAssistantMessage(chatId, [
       { 
         type: "text", 
-        text: `🐦 Posted tweet! <a href="${tweetURL}">Check it out here</a>`,
+        text: `🐍 Here's what I posted:\n\n${postContent}\n\n🐦 <a href="${tweetURL}">View on X</a>`,
         parse_mode: "HTML"
       },
     ]);
 
     return {
-      text: `🐦 Posted tweet! <a href="${tweetURL}">Check it out here</a>`,
+      text: `🐍 Posted successfully! <a href="${tweetURL}">View on X</a>`,
       parse_mode: "HTML",
       continue: true,
     };
   } catch (error) {
-    console.error("[handlePost] Error posting tweet:", error);
+    console.error("[handlePost] Error in post process:", error);
     return await handleSpeak(
       chatId,
-      "Hiss... Something went wrong while posting the tweet.",
+      "Hiss... Something went wrong while creating and posting my thoughts.",
     );
   }
 }
