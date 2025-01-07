@@ -304,7 +304,6 @@ async function processNextMessage(bot, openai, chatId) {
       resetCircuitBreaker();
       consecutiveErrors = 0; // Reset consecutive errors on success
     } catch (error) {
-      lastError = error;
 
       if (handleError(error, chatId)) {
         circuitBreaker.failures++;
@@ -374,16 +373,7 @@ async function startMessageProcessing(bot, openai) {
             `Error processing messages for chat ${chatId}: ${errorMessage}`,
           );
           return { error: errorMessage, continue: false }; // Return error info
-          if (consecutiveErrors >= maxConsecutiveErrors) {
-            console.error(
-              "Too many consecutive errors, restarting processing...",
-            );
-            stopMessageProcessing();
-            consecutiveErrors = 0;
-            await new Promise((resolve) => setTimeout(resolve, 5000)); // Add delay before restart
-            startMessageProcessing(bot, openai);
-            return;
-          }
+
         }
       }
     }
