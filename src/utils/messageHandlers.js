@@ -234,108 +234,15 @@ let isProcessingLoopActive = false;
 async function processNextMessage(bot, openai, chatId) {
   if (isCircuitOpen()) {
     console.warn("Circuit breaker is open, skipping message processing");
-    return { continue: false }; // Added consistent return
+    return { continue: false };
   }
 
-  let retryCount = 0;
-  const maxRetries = CONFIG.BOT.RECONNECT_ATTEMPTS;
-
-  const attempt = async () => {
-    try {
-      if (retryCount > 0) {
-        const delay = getBackoffDelay(retryCount);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
-      // Check if there are unprocessed messages
-      const lastMessage = await mongoDBService
-        .getCollection("messages")
-        .find({ chatId })
-        .sort({ timestamp: -1 })
-        .limit(1)
-        .toArray();
-
-      if (!lastMessage.length || lastMessage[0].role === "assistant") {
-        return;
-      }
-
-      const processLoop = async (remainingCycles = 3) => {
-        if (remainingCycles <= 0) return;
-
-        const response = await handleText(chatId, openai, bot);
-
-        // Store assistant's response in MongoDB
-        await mongoDBService.getCollection("messages").insertOne({
-          chatId,
-          content: [
-            { type: "text", text: response.text, imageUrl: response.imageUrl },
-          ],
-          role: "assistant",
-          timestamp: Date.now(),
-        });
-
-        // Handle regular responses
-        if (response.text) {
-          await sendTextMessage(bot, chatId, response.text);
-        }
-
-        // Handle media responses
-        if (response.filePath && !response.pendingImage) {
-          const ext = response.filePath.split(".").pop().toLowerCase();
-          try {
-            if (ext === "gif") {
-              await sendGif(bot, chatId, response.imageUrl);
-            } else if (["png", "jpg", "jpeg"].includes(ext)) {
-              await sendImage(bot, chatId, response.imageUrl);
-            }
-          } catch (error) {
-            console.error(`Failed to send media: ${error.message}`);
-          }
-        }
-
-        if (response.continue && !response.pendingImage) {
-          return processLoop(remainingCycles - 1);
-        }
-      };
-
-      await processLoop();
-
-      // Reset circuit breaker on success
-      resetCircuitBreaker();
-      consecutiveErrors = 0; // Reset consecutive errors on success
-    } catch (error) {
-      lastError = error;
-
-      if (handleError(error, chatId)) {
-        circuitBreaker.failures++;
-        circuitBreaker.lastFailure = Date.now();
-
-        if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
-          circuitBreaker.isOpen = true;
-          console.error(
-            "Circuit breaker opened due to persistent connection failures",
-          );
-          return { continue: false };
-        }
-
-        if (retryCount < maxRetries) {
-          retryCount++;
-          console.warn(`Connection error, attempt ${retryCount}/${maxRetries}`);
-          return await attempt();
-        }
-      }
-
-      throw error;
-    }
-  };
-
   try {
-    return await attempt();
+    // Delegate message processing to orchestrator
+    const response = await handleText(chatId, openai, bot);
+    return response;
   } catch (error) {
-    console.error(
-      `Error processing messages for chat ${chatId}: ${error.message}`,
-    );
-    // Return a consistent error response
+    console.error(`Error processing messages for chat ${chatId}: ${error.message}`);
     return { continue: false, error: error.message };
   }
 }
