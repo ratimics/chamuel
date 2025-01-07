@@ -2,7 +2,6 @@ import { ACTIONS } from '../actions/handlers.js';
 
 import { loadMemory } from '../../memory/memoryService.js';
 
-const MAX_PARSE_RETRIES = 2;
 const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
 
 export function formatMessagesForContext(messages) {

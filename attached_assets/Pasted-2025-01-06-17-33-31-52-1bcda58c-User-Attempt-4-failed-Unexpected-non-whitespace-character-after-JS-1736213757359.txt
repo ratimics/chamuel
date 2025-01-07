@@ -1,0 +1,112 @@
+2025-01-06 17:33:31.52
+1bcda58c
+User
+Attempt #4 failed: Unexpected non-whitespace character after JSON at position 241
+2025-01-06 17:34:01.28
+1bcda58c
+User
+[handleText] Step 3: LLM chose action: think
+2025-01-06 17:34:01.28
+1bcda58c
+User
+[handleText] Step 3: LLM message: I feel so at home here, among such delightful humans. Their presence warms my cold-blooded heart. *happily hisses to himself* 🐍💕😊
+2025-01-06 17:34:01.28
+1bcda58c
+User
+[handleThink] Storing reflection: I feel so at home here, among such delightful humans. Their presence warms my cold-blooded heart. *happily hisses to himself* 🐍💕😊
+2025-01-06 17:34:01.43
+1bcda58c
+User
+[updateMemory] Generated new memory and KG DSL: memories/memory_2025-01-07.md
+2025-01-06 17:34:01.58
+1bcda58c
+User
+[handleText] Step 1: Retrieving chat history...
+2025-01-06 17:34:01.65
+1bcda58c
+User
+[handleText] Step 1: Retrieved 20 messages.
+2025-01-06 17:34:01.65
+1bcda58c
+User
+[handleText] Step 2: Combining messages...
+2025-01-06 17:34:01.65
+1bcda58c
+User
+[handleText] Step 3: Requesting structured output from LLM...
+2025-01-06 17:34:05.22
+1bcda58c
+User
+[handleText] Step 3: LLM chose action: respond
+2025-01-06 17:34:05.22
+1bcda58c
+User
+[handleText] Step 3: LLM message: Oh, you are too kind, KruZnn! *blushes* 🐍😊 Your welcoming words make this snake feel right at home. *coils contentedly*
+2025-01-06 17:34:05.22
+1bcda58c
+User
+[handleSpeak] Sending response: Oh, you are too kind, KruZnn! *blushes* 🐍😊 Your welcoming words make this snake feel right at home. *coils contentedly*
+2025-01-06 17:34:36.10
+1bcda58c
+User
+[handleText] Step 1: Retrieving chat history...
+2025-01-06 17:34:36.17
+1bcda58c
+User
+[handleText] Step 1: Retrieved 20 messages.
+2025-01-06 17:34:36.17
+1bcda58c
+User
+[handleText] Step 2: Combining messages...
+2025-01-06 17:34:36.17
+1bcda58c
+User
+[handleText] Step 3: Requesting structured output from LLM...
+2025-01-06 17:34:40.69
+1bcda58c
+User
+Attempt #1 failed: Unexpected token '*', "*slithers "... is not valid JSON
+2025-01-06 17:34:46.14
+1bcda58c
+User
+Attempt #2 failed: Unexpected token '*', "*slithers "... is not valid JSON
+2025-01-06 17:34:54.99
+1bcda58c
+User
+Attempt #3 failed: Unexpected token '*', "*slithers "... is not valid JSON
+2025-01-06 17:34:59.12
+1bcda58c
+User
+[handleText] Step 3: LLM chose action: speak
+2025-01-06 17:34:59.12
+1bcda58c
+User
+[handleText] Step 3: LLM message: I haven't had the pleasessure yet, but I'm alwaysss thrilled to make new friendssss! *slithers over eagerly* 🐍👋
+2025-01-06 17:34:59.12
+1bcda58c
+User
+[handleSpeak] Sending response: I haven't had the pleasessure yet, but I'm alwaysss thrilled to make new friendssss! *slithers over eagerly* 🐍👋
+2025-01-06 17:34:59.96
+1bcda58c
+User
+[handleText] Step 1: Retrieving chat history...
+2025-01-06 17:35:00.03
+1bcda58c
+User
+[handleText] Step 1: Retrieved 20 messages.
+2025-01-06 17:35:00.03
+1bcda58c
+User
+[handleText] Step 2: Combining messages...
+2025-01-06 17:35:00.03
+1bcda58c
+User
+[handleText] Step 3: Requesting structured output from LLM...
+2025-01-06 17:35:03.12
+1bcda58c
+User
+Attempt #1 failed: Unexpected token '*', "*perks up "... is not valid JSON
+2025-01-06 17:35:11.83
+1bcda58c
+User
+[handleText] Step 3: LLM chose acti

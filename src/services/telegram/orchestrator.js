@@ -63,6 +63,9 @@ const backgroundTasks = new EventEmitter();
 // ----------------------------------------------------
 function isActionAllowed(actionName) {
   const now = Date.now();
+  if (actionName === "respond") {
+    actionName = "speak";
+  }
   const lastUsed = state.lastActionTimes[actionName] || 0;
   const action = ACTIONS[actionName];
 
@@ -230,51 +233,6 @@ export async function handleText(chatId, openai, bot) {
   }
 }
 
-// We'll place this "valid response" retrieval logic in its own function for clarity.
-async function getValidResponse(
-  openai,
-  prompt,
-  combinedMessages,
-  instructions,
-) {
-  const response = await openai.chat.completions.create({
-    model: "nousresearch/hermes-3-llama-3.1-405b",
-    messages: [
-      { role: "system", content: prompt },
-      { role: "user", content: combinedMessages + "\n\n" + instructions },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        type: "object",
-        properties: {
-          action: {
-            type: "string",
-            enum: Object.keys(ACTIONS),
-          },
-          message: {
-            type: "string",
-            description: "Content or reasoning behind the chosen action.",
-          },
-        },
-        required: ["action", "message"],
-        additionalProperties: false,
-      },
-    },
-    temperature: 0.8,
-  });
-
-  const content = response.choices[0]?.message?.content || "{}";
-  const parsed = JSON.parse(content);
-  if (!parsed.action || !parsed.message) {
-    throw new Error("Missing 'action' or 'message' in LLM response");
-  }
-  return { action: parsed.action, message: parsed.message };
-}
-// ----------------------------------------------------
-// endregion
-// ----------------------------------------------------
-
 // ----------------------------------------------------
 // region: Action Handlers
 // ----------------------------------------------------
@@ -318,42 +276,6 @@ async function handleThink(chatId, thinkingContent) {
     },
   ]);
   return { continue: true };
-}
-
-async function handleImagine(chatId, message) {
-  console.log("[handleImagine] Starting image generation...");
-
-  // Send initial response
-  const response = {
-    text: "🎨 I'm working on imagining that... Check back in a moment! 🐍",
-    continue: false,
-  };
-
-  // Start image generation in background
-  fireAndForget(async () => {
-    try {
-      const { buffer, type } = await MediaService.generateMediaBuffer(message);
-      await XService.maybePostImage(buffer, message, type);
-      const filePath = await MediaService.saveMediaLocally(buffer, type);
-      const imageUrl = await MediaService.uploadMediaToS3(filePath);
-
-      // Send the generated image as a new message
-      await MessageService.storeAssistantMessage(chatId, [
-        { type: "text", text: "Here's what I imagined! 🎨" },
-        { type: "image", url: imageUrl },
-      ]);
-    } catch (error) {
-      console.error("[handleImagine] Failed to generate image:", error);
-      await MessageService.storeAssistantMessage(chatId, [
-        {
-          type: "text",
-          text: "Hiss... I couldn't imagine an image this time.",
-        },
-      ]);
-    }
-  });
-
-  return response;
 }
 
 async function handleImagineBackground(chatId, message, bot) {
@@ -404,13 +326,6 @@ async function handleImagineBackground(chatId, message, bot) {
     };
   }
 }
-
-// Helper function for fire-and-forget pattern
-function fireAndForget(promise) {
-  promise.catch((error) => {
-    console.error("[fireAndForget] Error:", error);
-  });
-}
 // ----------------------------------------------------
 // endregion
 // ----------------------------------------------------
@@ -423,10 +338,9 @@ export { state, ACTIONS, backgroundTasks };
 // endregion
 // ----------------------------------------------------
 
-
 async function handlePost(chatId, content, bot) {
   console.log("[handlePost] Posting tweet:", content);
-  
+
   try {
     // Post to X with retry
     const tweetResult = await retry(() => XService.post({ text: content }), 2);
@@ -437,19 +351,22 @@ async function handlePost(chatId, content, bot) {
     }
 
     // Generate tweet URL
-    const tweetURL = `${process.env.X_BASE_URL || 'https://x.com'}/bobthesnek/status/${tweetResult.id}`;
-    
+    const tweetURL = `${process.env.X_BASE_URL || "https://x.com"}/bobthesnek/status/${tweetResult.id}`;
+
     // Store success message with tweet link
     await MessageService.storeAssistantMessage(chatId, [
       { type: "text", text: `🐦 Posted tweet! Check it out here: ${tweetURL}` },
     ]);
 
-    return { 
+    return {
       text: `Tweet posted successfully! ${tweetURL}`,
-      continue: true 
+      continue: true,
     };
   } catch (error) {
     console.error("[handlePost] Error posting tweet:", error);
-    return await handleSpeak(chatId, "Hiss... Something went wrong while posting the tweet.");
+    return await handleSpeak(
+      chatId,
+      "Hiss... Something went wrong while posting the tweet.",
+    );
   }
 }
