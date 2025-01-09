@@ -35,7 +35,13 @@ export class MessageQueue {
 
   removeMessage(chatId) {
     if (this.queues.has(chatId)) {
-      this.queues.get(chatId).pop();
+      const queue = this.queues.get(chatId);
+      if (queue.length > 0) {
+        queue.pop();
+        if (queue.length === 0) {
+          this.queues.delete(chatId);
+        }
+      }
     }
   }
 
