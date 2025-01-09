@@ -16,11 +16,6 @@ import EventEmitter from "events";
 // region: Actions Setup
 // ----------------------------------------------------
 const ACTIONS = {
-  speak: {
-    timeout: 3 * 10 * 1000, // 30 seconds
-    description: "Respond to the conversation",
-    handler: handleSpeak,
-  },
   respond: {
     timeout: 3 * 10 * 1000, // 30 seconds
     description: "Respond to the conversation",
@@ -36,11 +31,11 @@ const ACTIONS = {
     description: "Create a fun image or meme inspired by the discussion",
     handler: handleImagineBackground,
   },
-  post: {
-    timeout: 5 * 60 * 1000, // 5 minutes
-    description: "Post a text tweet to X",
-    handler: handlePost,
-  },
+  // post: {
+  //   timeout: 5 * 60 * 1000, // 5 minutes
+  //   description: "Post a text tweet to X",
+  //   handler: handlePost,
+  // },
   wait: {
     timeout: 30 * 1000, // 30 seconds
     description: "Pause and wait for someone else to contribute",
