@@ -126,9 +126,6 @@ export async function handleText(chatId, openai, bot) {
       return null;
     }
 
-    // Mark message as processed immediately
-    state.processedMessages.add(messageKey);
-
     console.log("[handleText] Step 1: Retrieved", history.length, "messages");
     
     if (state.processedMessages.has(messageKey)) {

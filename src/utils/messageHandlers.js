@@ -275,10 +275,12 @@ async function processNextMessage(bot, openai, chatId) {
         if (remainingCycles <= 0) return;
 
         const response = await handleText(chatId, openai, bot);
-        
+
         // Skip if response is null or invalid
         if (!response) {
-          console.log(`[processNextMessage] No valid response for chat ${chatId}`);
+          console.log(
+            `[processNextMessage] No valid response for chat ${chatId}`,
+          );
           return { continue: false };
         }
 
@@ -302,6 +304,7 @@ async function processNextMessage(bot, openai, chatId) {
 
         // Handle regular responses
         if (response.text) {
+          console.log("SENDING TEXT RESPONSE");
           await sendTextMessage(bot, chatId, response.text);
         }
 
@@ -330,7 +333,6 @@ async function processNextMessage(bot, openai, chatId) {
       resetCircuitBreaker();
       consecutiveErrors = 0; // Reset consecutive errors on success
     } catch (error) {
-
       if (handleError(error, chatId)) {
         circuitBreaker.failures++;
         circuitBreaker.lastFailure = Date.now();
@@ -393,13 +395,12 @@ async function startMessageProcessing(bot, openai) {
           messageQueue.removeMessage(chatId); // Remove processed message
           consecutiveErrors = 0; // Reset on success
         } catch (error) {
-          const errorMessage = error.message || 'Unknown error';
+          const errorMessage = error.message || "Unknown error";
           consecutiveErrors++;
           console.error(
             `Error processing messages for chat ${chatId}: ${errorMessage}`,
           );
           return { error: errorMessage, continue: false }; // Return error info
-
         }
       }
     }
