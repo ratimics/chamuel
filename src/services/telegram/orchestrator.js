@@ -12,6 +12,15 @@ import EventEmitter from "events";
 // endregion
 // ----------------------------------------------------
 
+
+// Action aliases mapping
+const ACTION_ALIASES = {
+  speak: ['respond', 'reply', 'send_message'],
+  think: ['reflect', 'contemplate'],
+  imagine: ['create', 'generate'],
+  wait: ['pause', 'hold']
+};
+
 // ----------------------------------------------------
 // region: Actions Setup
 // ----------------------------------------------------
@@ -58,11 +67,18 @@ const backgroundTasks = new EventEmitter();
 // ----------------------------------------------------
 function isActionAllowed(actionName) {
   const now = Date.now();
-  if (actionName === "respond") {
-    actionName = "speak";
+  
+  // Resolve alias to primary action name
+  let primaryAction = actionName;
+  for (const [main, aliases] of Object.entries(ACTION_ALIASES)) {
+    if (actionName === main || aliases.includes(actionName)) {
+      primaryAction = main;
+      break;
+    }
   }
-  const lastUsed = state.lastActionTimes[actionName] || 0;
-  const action = ACTIONS[actionName];
+
+  const lastUsed = state.lastActionTimes[primaryAction] || 0;
+  const action = ACTIONS[primaryAction];
 
   if (!action) {
     console.warn(`[isActionAllowed] Unknown action requested: ${actionName}`);
