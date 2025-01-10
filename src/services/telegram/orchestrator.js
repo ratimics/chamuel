@@ -12,20 +12,19 @@ import EventEmitter from "events";
 // endregion
 // ----------------------------------------------------
 
-
 // Action aliases mapping
 const ACTION_ALIASES = {
-  speak: ['respond', 'reply', 'send_message'],
-  think: ['reflect', 'contemplate'],
-  imagine: ['create', 'generate'],
-  wait: ['pause', 'hold']
+  speak: ["respond", "reply", "send_message"],
+  think: ["reflect", "contemplate"],
+  imagine: ["create", "generate"],
+  wait: ["pause", "hold"],
 };
 
 // ----------------------------------------------------
 // region: Actions Setup
 // ----------------------------------------------------
 const ACTIONS = {
-  respond: {
+  speak: {
     timeout: 3 * 10 * 1000, // 30 seconds
     description: "Respond to the conversation",
     handler: handleSpeak,
@@ -40,11 +39,6 @@ const ACTIONS = {
     description: "Create a fun image or meme inspired by the discussion",
     handler: handleImagineBackground,
   },
-  // post: {
-  //   timeout: 5 * 60 * 1000, // 5 minutes
-  //   description: "Post a text tweet to X",
-  //   handler: handlePost,
-  // },
   wait: {
     timeout: 30 * 1000, // 30 seconds
     description: "Pause and wait for someone else to contribute",
@@ -67,7 +61,7 @@ const backgroundTasks = new EventEmitter();
 // ----------------------------------------------------
 function isActionAllowed(actionName) {
   const now = Date.now();
-  
+
   // Resolve alias to primary action name
   let primaryAction = actionName;
   for (const [main, aliases] of Object.entries(ACTION_ALIASES)) {
@@ -77,6 +71,7 @@ function isActionAllowed(actionName) {
     }
   }
 
+  console.log(`Checking if action ${primaryAction} is allowed...`);
   const lastUsed = state.lastActionTimes[primaryAction] || 0;
   const action = ACTIONS[primaryAction];
 
@@ -131,129 +126,131 @@ export async function handleText(chatId, openai, bot) {
 
     const latestMessage = history[history.length - 1];
     const messageKey = `${chatId}-${latestMessage.timestamp}`;
-    
+
     if (state.processedMessages.has(messageKey)) {
       console.log("[handleText] Message already processed, skipping");
       return null;
     }
 
     console.log("[handleText] Step 1: Retrieved", history.length, "messages");
-    
+
     if (state.processedMessages.has(messageKey)) {
       console.log("[handleText] Message already processed, skipping");
       return null;
     }
-    
+
     state.processedMessages.add(messageKey);
 
-      // 2. Combine messages into a single string
-      console.log("[handleText] Step 2: Combining messages...");
-      const combinedMessages = MessageService.combineMessages(history);
+    // 2. Combine messages into a single string
+    console.log("[handleText] Step 2: Combining messages...");
+    const combinedMessages = MessageService.combineMessages(history);
 
-      // 3. Generate dynamic prompt based on available actions
-      const structuredPrompt = generateStructuredPrompt();
-      const responseInstructions = RESPONSE_INSTRUCTIONS;
+    // 3. Generate dynamic prompt based on available actions
+    const structuredPrompt = generateStructuredPrompt();
+    const responseInstructions = RESPONSE_INSTRUCTIONS;
 
-      // 4. Request Structured Output for decision-making
-      console.log(
-        "[handleText] Step 3: Requesting structured output from LLM...",
-      );
-      const getValidResponse = async () => {
-        const response = await openai.chat.completions.create({
-          model: "nousresearch/hermes-3-llama-3.1-405b",
-          messages: [
-            { role: "system", content: structuredPrompt },
-            {
-              role: "user",
-              content: combinedMessages + responseInstructions,
-            },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              type: "object",
-              properties: {
-                action: {
-                  type: "string",
-                  enum: Object.keys(ACTIONS),
-                },
-                message: {
-                  type: "string",
-                  description:
-                    "The content or reasoning behind the chosen action.",
-                },
-              },
-              required: ["action", "message"],
-              additionalProperties: false,
-            },
+    // 4. Request Structured Output for decision-making
+    console.log(
+      "[handleText] Step 3: Requesting structured output from LLM...",
+    );
+    const getValidResponse = async () => {
+      const response = await openai.chat.completions.create({
+        model: "nousresearch/hermes-3-llama-3.1-405b",
+        messages: [
+          { role: "system", content: structuredPrompt },
+          {
+            role: "user",
+            content: combinedMessages + responseInstructions,
           },
-          temperature: 0.8,
-        });
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            type: "object",
+            properties: {
+              action: {
+                type: "string",
+                enum: Object.keys(ACTIONS),
+              },
+              message: {
+                type: "string",
+                description:
+                  "The content or reasoning behind the chosen action.",
+              },
+            },
+            required: ["action", "message"],
+            additionalProperties: false,
+          },
+        },
+        temperature: 0.8,
+      });
 
-        const content = response.choices[0]?.message?.content;
-        if (!content) throw new Error("Empty LLM response");
-        const parsed = JSON.parse(content.trim());
-        if (!parsed || typeof parsed !== 'object') throw new Error("Invalid JSON response");
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("Empty LLM response");
+      const parsed = JSON.parse(content.trim());
+      if (!parsed || typeof parsed !== "object")
+        throw new Error("Invalid JSON response");
 
-        return {
-          action: parsed.action,
-          message: parsed.message,
-        };
+      return {
+        action: parsed.action,
+        message: parsed.message,
       };
+    };
 
-      // Example of inlined logic (no separate function)
-      let action, message;
-      const maxRetries = 5;
+    // Example of inlined logic (no separate function)
+    let action, message;
+    const maxRetries = 5;
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const response = await getValidResponse();
-          if (!response.action || !response.message) {
-            throw new Error("Response is missing required properties");
-          }
-          action = response.action;
-          message = response.message;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await getValidResponse();
+        if (!response.action || !response.message) {
+          console.log(JSON.stringify(response, null, 2));
+          throw new Error("Response is missing required properties");
+        }
+        action = response.action;
+        message = response.message;
 
-          if (!action || !ACTIONS[action]) {
-            throw new Error("Invalid response: " + JSON.stringify(response));
-          }
+        if (!action) {
+          throw new Error("Invalid response: " + JSON.stringify(response));
+        }
 
-          break;
-        } catch (error) {
-          console.error(`Attempt #${attempt} failed: ${error.message}`);
+        break;
+      } catch (error) {
+        console.error(`Attempt #${attempt} failed: ${error.message}`);
 
-          // Optional: add a small delay before next retry
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Optional: add a small delay before next retry
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-          if (attempt === maxRetries) {
-            console.error("All attempts failed.");
-          }
+        if (attempt === maxRetries) {
+          console.error("All attempts failed.");
         }
       }
-
-      console.log(`[handleText] Step 3: LLM chose action: ${action}`);
-      console.log(`[handleText] Step 3: LLM message: ${message}`);
-
-      // 5. Execute the chosen action if allowed
-      if (!isActionAllowed(action)) {
-        console.log(`[handleText] Action "${action}" is on cooldown.`);
-        return await handleSpeak(
-          chatId,
-          bot,
-          `Hiss... I need to wait a bit before I can ${action} again.`,
-        );
-      }
-
-      // 6. Update action timestamp and execute handler
-      updateActionTimestamp(action);
-
-      // Execute the action handler
-      return await ACTIONS[action].handler(chatId, message, bot);
-    } catch (error) {
-      console.error("[handleText] Caught an error:", error);
-      const errorMessage = error.message || "Unknown error occurred";
-      return await fallbackResponse(chatId, bot, errorMessage);
     }
+
+    console.log(`[handleText] Step 3: LLM chose action: ${action}`);
+    console.log(`[handleText] Step 3: LLM message: ${message}`);
+
+    // 5. Execute the chosen action if allowed
+    if (!isActionAllowed(action)) {
+      console.log(`[handleText] Action "${action}" is on cooldown.`);
+      return await handleSpeak(
+        chatId,
+        bot,
+        `Hiss... I need to wait a bit before I can ${action} again.`,
+      );
+    }
+
+    // 6. Update action timestamp and execute handler
+    updateActionTimestamp(action);
+
+    // Execute the action handler
+    return await ACTIONS[action].handler(chatId, message, bot);
+  } catch (error) {
+    console.error("[handleText] Caught an error:", error);
+    const errorMessage = error.message || "Unknown error occurred";
+    return await fallbackResponse(chatId, bot, errorMessage);
+  }
 }
 
 // ----------------------------------------------------
@@ -266,7 +263,10 @@ async function handleWait(chatId, content) {
   await MessageService.storeAssistantMessage(chatId, [
     { type: "text", text: content },
   ]);
-  return { continue: false };
+  return {
+    text: null,
+    continue: false,
+  };
 }
 
 async function handleSpeak(chatId, content) {
@@ -274,14 +274,21 @@ async function handleSpeak(chatId, content) {
     "[handleSpeak] Sending response:",
     typeof content === "string" ? content : "Complex object",
   );
+
   await MessageService.storeAssistantMessage(chatId, [
     {
       type: "text",
-      text: typeof content === "string" ? content : content.text || "Hiss...",
+      text:
+        typeof content === "string"
+          ? content
+          : content.text || content.response || null,
     },
   ]);
   return {
-    text: typeof content === "string" ? content : content.text || "Hiss...",
+    text:
+      typeof content === "string"
+        ? content
+        : content.text || content.response || null,
     continue: true,
   };
 }
@@ -301,7 +308,7 @@ async function handleThink(chatId, thinkingContent) {
   return { continue: true };
 }
 
-async function handleImagineBackground(chatId, message, bot) {
+async function handleImagineBackground(chatId, message) {
   console.log(
     "[handleImagineBackground] Starting background image generation...",
   );
