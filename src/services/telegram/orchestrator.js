@@ -2,7 +2,7 @@
 // region: Imports & Constants
 // ----------------------------------------------------
 import { updateMemory } from "../memory/memoryService.js";
-
+import { retry } from "../../utils/retry.js";
 import { MessageService, MediaService, XService } from "./index.js";
 
 import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
@@ -12,13 +12,21 @@ import EventEmitter from "events";
 // endregion
 // ----------------------------------------------------
 
+// Action aliases mapping
+const ACTION_ALIASES = {
+  speak: ["respond", "reply", "send_message"],
+  think: ["reflect", "contemplate"],
+  imagine: ["create", "generate"],
+  wait: ["pause", "hold"],
+};
+
 // ----------------------------------------------------
 // region: Actions Setup
 // ----------------------------------------------------
 const ACTIONS = {
   speak: {
     timeout: 3 * 10 * 1000, // 30 seconds
-    description: "Say something relevant to the conversation",
+    description: "Respond to the conversation",
     handler: handleSpeak,
   },
   think: {
@@ -53,8 +61,19 @@ const backgroundTasks = new EventEmitter();
 // ----------------------------------------------------
 function isActionAllowed(actionName) {
   const now = Date.now();
-  const lastUsed = state.lastActionTimes[actionName] || 0;
-  const action = ACTIONS[actionName];
+
+  // Resolve alias to primary action name
+  let primaryAction = actionName;
+  for (const [main, aliases] of Object.entries(ACTION_ALIASES)) {
+    if (actionName === main || aliases.includes(actionName)) {
+      primaryAction = main;
+      break;
+    }
+  }
+
+  console.log(`Checking if action ${primaryAction} is allowed...`);
+  const lastUsed = state.lastActionTimes[primaryAction] || 0;
+  const action = ACTIONS[primaryAction];
 
   if (!action) {
     console.warn(`[isActionAllowed] Unknown action requested: ${actionName}`);
@@ -93,177 +112,146 @@ Always pick the action that fits best with the given context. Respond in a struc
 // ----------------------------------------------------
 export async function handleText(chatId, openai, bot) {
   try {
-    // 1. Retrieve chat history
-    const history = await MessageService.fetchChatHistory(chatId, 20);
-    if (!history.length) return null; // do nothing if no history
-
-    try {
-      // 1. Retrieve chat history
-      console.log("[handleText] Step 1: Retrieving chat history...");
-      const history = await MessageService.fetchChatHistory(chatId, 20);
-      console.log(`[handleText] Step 1: Retrieved ${history.length} messages.`);
-
-      if (!history.length) {
-        console.log("[handleText] Step 1: No history found, returning null.");
-        return null;
-      }
-
-      // 2. Combine messages into a single string
-      console.log("[handleText] Step 2: Combining messages...");
-      const combinedMessages = MessageService.combineMessages(history);
-
-      // 3. Generate dynamic prompt based on available actions
-      const structuredPrompt = generateStructuredPrompt();
-      const responseInstructions = RESPONSE_INSTRUCTIONS;
-
-      // 4. Request Structured Output for decision-making
-      console.log(
-        "[handleText] Step 3: Requesting structured output from LLM...",
-      );
-      const getValidResponse = async () => {
-        const response = await openai.chat.completions.create({
-          model: "nousresearch/hermes-3-llama-3.1-405b",
-          messages: [
-            { role: "system", content: structuredPrompt },
-            {
-              role: "user",
-              content: combinedMessages + responseInstructions,
-            },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              type: "object",
-              properties: {
-                action: {
-                  type: "string",
-                  enum: Object.keys(ACTIONS),
-                },
-                message: {
-                  type: "string",
-                  description:
-                    "The content or reasoning behind the chosen action.",
-                },
-              },
-              required: ["action", "message"],
-              additionalProperties: false,
-            },
-          },
-          temperature: 0.8,
-        });
-
-        const parsed = JSON.parse(response.choices[0]?.message?.content) || {};
-
-        return {
-          action: parsed.action,
-          message: parsed.message,
-        };
-      };
-
-      // Example of inlined logic (no separate function)
-      let action, message;
-      const maxRetries = 5;
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const response = await getValidResponse();
-          if (!response.action || !response.message) {
-            throw new Error("Response is missing required properties");
-          }
-          action = response.action;
-          message = response.message;
-
-          if (!action || !ACTIONS[action]) {
-            throw new Error("Invalid response: " + JSON.stringify(response));
-          }
-
-          break;
-        } catch (error) {
-          console.error(`Attempt #${attempt} failed: ${error.message}`);
-
-          // Optional: add a small delay before next retry
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-
-          if (attempt === maxRetries) {
-            console.error("All attempts failed.");
-          }
-        }
-      }
-
-      console.log(`[handleText] Step 3: LLM chose action: ${action}`);
-      console.log(`[handleText] Step 3: LLM message: ${message}`);
-
-      // 5. Execute the chosen action if allowed
-      if (!isActionAllowed(action)) {
-        console.log(`[handleText] Action "${action}" is on cooldown.`);
-        return await handleSpeak(
-          chatId,
-          bot,
-          `Hiss... I need to wait a bit before I can ${action} again.`,
-        );
-      }
-
-      // 6. Update action timestamp and execute handler
-      updateActionTimestamp(action);
-
-      // Execute the action handler
-      return await ACTIONS[action].handler(chatId, message, bot);
-    } catch (error) {
-      console.error("[handleText] Caught an error:", error);
-      const errorMessage = error.message || "Unknown error occurred";
-      return await fallbackResponse(chatId, bot, errorMessage);
+    // Initialize message tracking
+    if (!state.processedMessages) {
+      state.processedMessages = new Set();
     }
-  } catch (error) {
-    console.error("[handleText] Unexpected error:", error);
-    // Do not send anything to the chat
-    return null;
-  }
-}
 
-// We'll place this "valid response" retrieval logic in its own function for clarity.
-async function getValidResponse(
-  openai,
-  prompt,
-  combinedMessages,
-  instructions,
-) {
-  const response = await openai.chat.completions.create({
-    model: "nousresearch/hermes-3-llama-3.1-405b",
-    messages: [
-      { role: "system", content: prompt },
-      { role: "user", content: combinedMessages + "\n\n" + instructions },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        type: "object",
-        properties: {
-          action: {
-            type: "string",
-            enum: Object.keys(ACTIONS),
+    // Get latest message and check if already processed
+    const history = await MessageService.fetchChatHistory(chatId, 20);
+    if (!history.length) {
+      console.log("[handleText] No history found, returning null.");
+      return null;
+    }
+
+    const latestMessage = history[history.length - 1];
+    const messageKey = `${chatId}-${latestMessage.timestamp}`;
+
+    if (state.processedMessages.has(messageKey)) {
+      console.log("[handleText] Message already processed, skipping");
+      return null;
+    }
+
+    console.log("[handleText] Step 1: Retrieved", history.length, "messages");
+
+    if (state.processedMessages.has(messageKey)) {
+      console.log("[handleText] Message already processed, skipping");
+      return null;
+    }
+
+    state.processedMessages.add(messageKey);
+
+    // 2. Combine messages into a single string
+    console.log("[handleText] Step 2: Combining messages...");
+    const combinedMessages = MessageService.combineMessages(history);
+
+    // 3. Generate dynamic prompt based on available actions
+    const structuredPrompt = generateStructuredPrompt();
+    const responseInstructions = RESPONSE_INSTRUCTIONS;
+
+    // 4. Request Structured Output for decision-making
+    console.log(
+      "[handleText] Step 3: Requesting structured output from LLM...",
+    );
+    const getValidResponse = async () => {
+      const response = await openai.chat.completions.create({
+        model: "nousresearch/hermes-3-llama-3.1-405b",
+        messages: [
+          { role: "system", content: structuredPrompt },
+          {
+            role: "user",
+            content: combinedMessages + responseInstructions,
           },
-          message: {
-            type: "string",
-            description: "Content or reasoning behind the chosen action.",
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            type: "object",
+            properties: {
+              action: {
+                type: "string",
+                enum: Object.keys(ACTIONS),
+              },
+              message: {
+                type: "string",
+                description:
+                  "The content or reasoning behind the chosen action.",
+              },
+            },
+            required: ["action", "message"],
+            additionalProperties: false,
           },
         },
-        required: ["action", "message"],
-        additionalProperties: false,
-      },
-    },
-    temperature: 0.8,
-  });
+        temperature: 0.8,
+      });
 
-  const content = response.choices[0]?.message?.content || "{}";
-  const parsed = JSON.parse(content);
-  if (!parsed.action || !parsed.message) {
-    throw new Error("Missing 'action' or 'message' in LLM response");
+      const content = response.choices[0]?.message?.content;
+      if (!content) throw new Error("Empty LLM response");
+      const parsed = JSON.parse(content.trim());
+      if (!parsed || typeof parsed !== "object")
+        throw new Error("Invalid JSON response");
+
+      return {
+        action: parsed.action,
+        message: parsed.message,
+      };
+    };
+
+    // Example of inlined logic (no separate function)
+    let action, message;
+    const maxRetries = 5;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await getValidResponse();
+        if (!response.action || !response.message) {
+          console.log(JSON.stringify(response, null, 2));
+          throw new Error("Response is missing required properties");
+        }
+        action = response.action;
+        message = response.message;
+
+        if (!action) {
+          throw new Error("Invalid response: " + JSON.stringify(response));
+        }
+
+        break;
+      } catch (error) {
+        console.error(`Attempt #${attempt} failed: ${error.message}`);
+
+        // Optional: add a small delay before next retry
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        if (attempt === maxRetries) {
+          console.error("All attempts failed.");
+        }
+      }
+    }
+
+    console.log(`[handleText] Step 3: LLM chose action: ${action}`);
+    console.log(`[handleText] Step 3: LLM message: ${message}`);
+
+    // 5. Execute the chosen action if allowed
+    if (!isActionAllowed(action)) {
+      console.log(`[handleText] Action "${action}" is on cooldown.`);
+      return await handleSpeak(
+        chatId,
+        bot,
+        `Hiss... I need to wait a bit before I can ${action} again.`,
+      );
+    }
+
+    // 6. Update action timestamp and execute handler
+    updateActionTimestamp(action);
+
+    // Execute the action handler
+    return await ACTIONS[action].handler(chatId, message, bot);
+  } catch (error) {
+    console.error("[handleText] Caught an error:", error);
+    const errorMessage = error.message || "Unknown error occurred";
+    return await fallbackResponse(chatId, bot, errorMessage);
   }
-  return { action: parsed.action, message: parsed.message };
 }
-// ----------------------------------------------------
-// endregion
-// ----------------------------------------------------
 
 // ----------------------------------------------------
 // region: Action Handlers
@@ -275,7 +263,10 @@ async function handleWait(chatId, content) {
   await MessageService.storeAssistantMessage(chatId, [
     { type: "text", text: content },
   ]);
-  return { continue: false };
+  return {
+    text: null,
+    continue: false,
+  };
 }
 
 async function handleSpeak(chatId, content) {
@@ -283,14 +274,21 @@ async function handleSpeak(chatId, content) {
     "[handleSpeak] Sending response:",
     typeof content === "string" ? content : "Complex object",
   );
+
   await MessageService.storeAssistantMessage(chatId, [
     {
       type: "text",
-      text: typeof content === "string" ? content : content.text || "Hiss...",
+      text:
+        typeof content === "string"
+          ? content
+          : content.text || content.response || null,
     },
   ]);
   return {
-    text: typeof content === "string" ? content : content.text || "Hiss...",
+    text:
+      typeof content === "string"
+        ? content
+        : content.text || content.response || null,
     continue: true,
   };
 }
@@ -310,43 +308,7 @@ async function handleThink(chatId, thinkingContent) {
   return { continue: true };
 }
 
-async function handleImagine(chatId, message) {
-  console.log("[handleImagine] Starting image generation...");
-
-  // Send initial response
-  const response = {
-    text: "🎨 I'm working on imagining that... Check back in a moment! 🐍",
-    continue: false,
-  };
-
-  // Start image generation in background
-  fireAndForget(async () => {
-    try {
-      const { buffer, type } = await MediaService.generateMediaBuffer(message);
-      await XService.maybePostImage(buffer, message, type);
-      const filePath = await MediaService.saveMediaLocally(buffer, type);
-      const imageUrl = await MediaService.uploadMediaToS3(filePath);
-
-      // Send the generated image as a new message
-      await MessageService.storeAssistantMessage(chatId, [
-        { type: "text", text: "Here's what I imagined! 🎨" },
-        { type: "image", url: imageUrl },
-      ]);
-    } catch (error) {
-      console.error("[handleImagine] Failed to generate image:", error);
-      await MessageService.storeAssistantMessage(chatId, [
-        {
-          type: "text",
-          text: "Hiss... I couldn't imagine an image this time.",
-        },
-      ]);
-    }
-  });
-
-  return response;
-}
-
-async function handleImagineBackground(chatId, message, bot) {
+async function handleImagineBackground(chatId, message) {
   console.log(
     "[handleImagineBackground] Starting background image generation...",
   );
@@ -394,13 +356,6 @@ async function handleImagineBackground(chatId, message, bot) {
     };
   }
 }
-
-// Helper function for fire-and-forget pattern
-function fireAndForget(promise) {
-  promise.catch((error) => {
-    console.error("[fireAndForget] Error:", error);
-  });
-}
 // ----------------------------------------------------
 // endregion
 // ----------------------------------------------------
@@ -412,3 +367,36 @@ export { state, ACTIONS, backgroundTasks };
 // ----------------------------------------------------
 // endregion
 // ----------------------------------------------------
+
+async function handlePost(chatId, content, bot) {
+  console.log("[handlePost] Posting tweet:", content);
+
+  try {
+    // Post to X with retry
+    const tweetResult = await retry(() => XService.post({ text: content }), 2);
+
+    if (!tweetResult?.id) {
+      console.error("[handlePost] Failed to post tweet");
+      return await handleSpeak(chatId, "Hiss... I couldn't post that tweet.");
+    }
+
+    // Generate tweet URL
+    const tweetURL = `${process.env.X_BASE_URL || "https://x.com"}/bobthesnek/status/${tweetResult.id}`;
+
+    // Store success message with tweet link
+    await MessageService.storeAssistantMessage(chatId, [
+      { type: "text", text: `🐦 Posted tweet! Check it out here: ${tweetURL}` },
+    ]);
+
+    return {
+      text: `Tweet posted successfully! ${tweetURL}`,
+      continue: true,
+    };
+  } catch (error) {
+    console.error("[handlePost] Error posting tweet:", error);
+    return await handleSpeak(
+      chatId,
+      "Hiss... Something went wrong while posting the tweet.",
+    );
+  }
+}

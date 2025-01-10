@@ -2,7 +2,6 @@ import { ACTIONS } from '../actions/handlers.js';
 
 import { loadMemory } from '../../memory/memoryService.js';
 
-const MAX_PARSE_RETRIES = 2;
 const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
 
 export function formatMessagesForContext(messages) {
@@ -61,12 +60,32 @@ function isActionAllowed(actionName, lastActionTimes) {
 }
 
 function parseJSONWithExtraction(rawString) {
-    const startIdx = rawString.indexOf("{");
-    const endIdx = rawString.lastIndexOf("}");
+    try {
+        // First try direct JSON parse
+        return JSON.parse(rawString);
+    } catch (e) {
+        // Look for JSON object boundaries
+        const startIdx = rawString.indexOf("{");
+        const endIdx = rawString.lastIndexOf("}");
 
-    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-        throw new Error("No valid JSON object found in the string.");
+        if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+            // Default to speak action if no valid JSON found
+            return {
+                action: "speak",
+                message: rawString.trim()
+            };
+        }
+
+        // Extract and parse the JSON portion
+        const jsonStr = rawString.slice(startIdx, endIdx + 1).trim();
+        try {
+            return JSON.parse(jsonStr);
+        } catch (err) {
+            // Fallback to speak action if JSON parsing fails
+            return {
+                action: "speak",
+                message: rawString.trim()
+            };
+        }
     }
-
-    return JSON.parse(rawString.slice(startIdx, endIdx + 1).trim());
 }

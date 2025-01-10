@@ -96,6 +96,18 @@ export async function setupMessageHandlers(bot, openai) {
       try {
         const chatId = msg.chat.id;
 
+        // Skip processing if message is null or undefined
+        if (!msg) {
+          console.log("Received null or undefined message");
+          return;
+        }
+
+        // Handle non-text messages
+        if (!msg.text && !msg.photo) {
+          console.log("Message contains no text or photo, skipping");
+          return;
+        }
+
         // if it contains a Ca ignore it
         if (msg.text && msg.text.toLowerCase().includes("ca")) {
           return;
@@ -264,18 +276,35 @@ async function processNextMessage(bot, openai, chatId) {
 
         const response = await handleText(chatId, openai, bot);
 
-        // Store assistant's response in MongoDB
-        await mongoDBService.getCollection("messages").insertOne({
-          chatId,
-          content: [
-            { type: "text", text: response.text, imageUrl: response.imageUrl },
-          ],
-          role: "assistant",
-          timestamp: Date.now(),
-        });
+        // Skip if response is null or invalid
+        if (!response) {
+          console.log(
+            `[processNextMessage] No valid response for chat ${chatId}`,
+          );
+          return { continue: false };
+        }
+
+        // Store assistant's response in MongoDB with null checks
+        const content = [];
+        if (response.text) {
+          content.push({ type: "text", text: response.text });
+        }
+        if (response.imageUrl) {
+          content.push({ type: "image", imageUrl: response.imageUrl });
+        }
+
+        if (content.length > 0) {
+          await mongoDBService.getCollection("messages").insertOne({
+            chatId,
+            content,
+            role: "assistant",
+            timestamp: Date.now(),
+          });
+        }
 
         // Handle regular responses
         if (response.text) {
+          console.log("SENDING TEXT RESPONSE");
           await sendTextMessage(bot, chatId, response.text);
         }
 
@@ -304,8 +333,6 @@ async function processNextMessage(bot, openai, chatId) {
       resetCircuitBreaker();
       consecutiveErrors = 0; // Reset consecutive errors on success
     } catch (error) {
-      lastError = error;
-
       if (handleError(error, chatId)) {
         circuitBreaker.failures++;
         circuitBreaker.lastFailure = Date.now();
@@ -365,23 +392,15 @@ async function startMessageProcessing(bot, openai) {
       for (const chatId of chats) {
         try {
           await processNextMessage(bot, openai, chatId);
-
           messageQueue.removeMessage(chatId); // Remove processed message
+          consecutiveErrors = 0; // Reset on success
         } catch (error) {
+          const errorMessage = error.message || "Unknown error";
           consecutiveErrors++;
           console.error(
-            `Error processing messages for chat ${chatId}: ${error.message}`,
+            `Error processing messages for chat ${chatId}: ${errorMessage}`,
           );
-          if (consecutiveErrors >= maxConsecutiveErrors) {
-            console.error(
-              "Too many consecutive errors, restarting processing...",
-            );
-            stopMessageProcessing();
-            consecutiveErrors = 0;
-            await new Promise((resolve) => setTimeout(resolve, 5000)); // Add delay before restart
-            startMessageProcessing(bot, openai);
-            return;
-          }
+          return { error: errorMessage, continue: false }; // Return error info
         }
       }
     }
