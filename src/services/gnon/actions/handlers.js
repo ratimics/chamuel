@@ -1,4 +1,5 @@
 import { updateMemory } from "../../memory/memoryService.js";
+import { XService } from "../../x/xService.js";
 
 const LLM_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
 
@@ -29,11 +30,9 @@ export async function handleSpeak(roomName, content, chamberService) {
     return { text: content, continue: true };
 }
 
-import { postX } from "../../x/x.js";
-
 export async function handleThink(roomName, thinkingContent, context = {}) {
     console.log("[handleThink] Processing thought:", thinkingContent);
-    
+
     // Store in memory
     await updateMemory([
         {
@@ -45,10 +44,8 @@ export async function handleThink(roomName, thinkingContent, context = {}) {
 
     // Post to X if content is suitable
     try {
-        const tweetResult = await postX({ 
-            text: thinkingContent.substring(0, 280) // X character limit
-        });
-        
+        const tweetResult = await XService.post({ text: thinkingContent });
+
         if (tweetResult?.id) {
             console.log("[handleThink] Posted to X:", tweetResult.url);
         }
