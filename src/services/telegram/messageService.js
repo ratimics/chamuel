@@ -44,3 +44,14 @@ export class MessageService {
       .join('\n');
   }
 }
+export class MessageService {
+  static async getMessageCount() {
+    try {
+      const collection = await mongodb.getCollection('messages');
+      return await collection.countDocuments();
+    } catch (error) {
+      console.error('Error getting message count:', error);
+      return 0;
+    }
+  }
+}

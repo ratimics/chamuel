@@ -53,6 +53,7 @@ async function loadSystemPrompt() {
 }
 
 export const CONFIG = {
+  HOME_CHANNEL: 'solar-temple',
   PATHS: {
     ROOT: __dirname,
     PERSONALITY: path.join(__dirname, "personality"),

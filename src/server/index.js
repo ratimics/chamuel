@@ -74,9 +74,33 @@ io.on('connection', (socket) => {
 });
 
 // Start server
+app.get('/api/stats', async (req, res) => {
+  try {
+    const stats = {
+      messagesProcessed: await MessageService.getMessageCount(),
+      activeUsers: await ChannelManager.getActiveUsersCount(),
+      uptime: process.uptime()
+    };
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+app.get('/api/journal/latest', async (req, res) => {
+  try {
+    const journal = await JournalService.getLatestJournal();
+    res.json(journal);
+  } catch (error) {
+    console.error('Error fetching journal:', error);
+    res.status(500).json({ error: 'Failed to fetch journal' });
+  }
+});
+
 const PORT = process.env.DASHBOARD_PORT || 3000;
 httpServer.listen(PORT, () => {
-  console.log(`Dashboard running on http://localhost:${PORT}`);
+  console.log(`Dashboard running on http://0.0.0.0:${PORT}`);
 });
 
 export { io }; // Export for use in other parts of the application

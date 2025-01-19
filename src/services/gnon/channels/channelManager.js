@@ -155,3 +155,23 @@ export class ChannelManager {
         this.lastBobMessage.set(channelName, Date.now());
     }
 }
+
+
+  async getActiveUsersCount() {
+    try {
+      const activeChannels = await this.getActiveChannels();
+      const uniqueUsers = new Set();
+      
+      for (const channel of activeChannels) {
+        const messages = await this.chamberService.getMessages(channel.name, 100);
+        messages.forEach(msg => {
+          if (msg.username) uniqueUsers.add(msg.username);
+        });
+      }
+      
+      return uniqueUsers.size;
+    } catch (error) {
+      console.error('Error getting active users count:', error);
+      return 0;
+    }
+  }
