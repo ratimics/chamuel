@@ -130,12 +130,24 @@ function initBot() {
   });
 
   // Start polling for new messages
+  // Enhanced logging function
+  const logMessage = (type, message, data = {}) => {
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type,
+      message,
+      ...data
+    }));
+  };
+
   setInterval(async () => {
     try {
+      logMessage('polling_start', 'Starting update poll');
       const updates = await bot.getUpdates({
         offset: -1,
         limit: 10
       });
+      logMessage('updates_received', 'Received updates', { count: updates.length });
 
       for (const update of updates) {
         if (!update.message || update.message.from.is_bot) continue;
@@ -147,8 +159,34 @@ function initBot() {
         );
 
         if (shouldRespond) {
-          await bot.sendMessage(update.message.chat.id, "Processing response...");
-          // Your existing message handling logic here
+          const maxRetries = 3;
+          let attempt = 0;
+          
+          while (attempt < maxRetries) {
+            try {
+              logMessage('processing_message', 'Processing message', { 
+                messageId: update.message.message_id,
+                attempt: attempt + 1 
+              });
+              
+              await bot.sendMessage(update.message.chat.id, "Processing response...");
+              // Your existing message handling logic here
+              break;
+            } catch (error) {
+              attempt++;
+              logMessage('response_error', 'Error processing message', {
+                error: error.message,
+                attempt,
+                messageId: update.message.message_id
+              });
+              
+              if (attempt === maxRetries) {
+                throw error;
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            }
+          }
         }
 
         lastProcessedMessageId = update.message.message_id;
