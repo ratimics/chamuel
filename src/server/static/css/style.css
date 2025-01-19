@@ -5,7 +5,7 @@
     --text-color: #ecf0f1;
     --card-bg: #34495e;
   }
-  
+
   body {
     margin: 0;
     padding: 0;
@@ -13,37 +13,51 @@
     background: var(--primary-color);
     color: var(--text-color);
   }
-  
+
+  nav {
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: #f5f5f5;
+  }
+
+  .nav-link {
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    color: #333;
+    background: white;
+    border-radius: 4px;
+  }
+
   .dashboard {
     padding: 20px;
   }
-  
+
   header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
   }
-  
+
   .grid-container {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 20px;
   }
-  
+
   .card {
     background: var(--card-bg);
     border-radius: 10px;
     padding: 20px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
-  
+
   .status {
     padding: 5px 10px;
     border-radius: 5px;
     background: var(--accent-color);
   }
-  
+
   .feed-content {
     max-height: 300px;
     overflow-y: auto;

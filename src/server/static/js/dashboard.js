@@ -23,20 +23,24 @@ socket.on('telegram:message', (message) => {
 async function fetchJournal() {
   try {
     const response = await fetch('/api/journal/latest');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const journal = await response.json();
     displayJournal(journal);
   } catch (error) {
     console.error('Error fetching journal:', error);
+    journalContent.innerHTML = '<p class="error">Failed to load journal data</p>';
   }
 }
 
 async function fetchStats() {
   try {
     const response = await fetch('/api/stats');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const stats = await response.json();
     displayStats(stats);
   } catch (error) {
     console.error('Error fetching stats:', error);
+    statsContent.innerHTML = '<p class="error">Failed to load stats data</p>';
   }
 }
 
