@@ -1,0 +1,34 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Prompt Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>AI Prompt Manager</h1>
+        
+        <div class="prompt-section">
+            <h2>System Prompt</h2>
+            <textarea id="systemPrompt" rows="10"></textarea>
+            <button onclick="savePrompt('system')">Save System Prompt</button>
+        </div>
+
+        <div class="prompt-section">
+            <h2>Response Instructions</h2>
+            <textarea id="responsePrompt" rows="10"></textarea>
+            <button onclick="savePrompt('response')">Save Response Instructions</button>
+        </div>
+
+        <div class="prompt-section">
+            <h2>Style Prompt</h2>
+            <textarea id="stylePrompt" rows="10"></textarea>
+            <button onclick="savePrompt('style')">Save Style Prompt</button>
+        </div>
+    </div>
+    <script src="/js/promptManager.js"></script>
+</body>
+</html>

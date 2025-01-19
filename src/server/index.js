@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { JournalService } from '../services/journal/journal.js';
 import { CONFIG } from '../config/index.js';
+import { promptManager } from '../services/prompts/promptManager.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -21,6 +22,28 @@ app.get('/api/journal/latest', async (req, res) => {
   try {
     const journal = await journalService.loadJournal();
     res.json(journal);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Prompt management endpoints
+app.get('/api/prompts', async (req, res) => {
+  try {
+    const prompts = await promptManager.loadPrompts();
+    const promptsObject = Object.fromEntries(prompts);
+    res.json(promptsObject);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/prompts/:type', express.json(), async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { content } = req.body;
+    await promptManager.savePrompt(type, content);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

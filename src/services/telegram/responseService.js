@@ -1,6 +1,7 @@
 import mongoDBService from "../mongodb/mongodb.js";
 
-import { CONFIG, SYSTEM_PROMPT } from "../../config/index.js";
+import { CONFIG } from "../../config/index.js";
+import { promptManager } from "../prompts/promptManager.js";
 // ----------------------------------------------------
 // region: Final Response Service
 // ----------------------------------------------------
