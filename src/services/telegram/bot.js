@@ -28,6 +28,12 @@ const REQUEST_CONFIG = {
   retryDelay: 1000
 };
 
+import { ResponseEvaluator } from './responseEvaluator.js';
+
+// Polling configuration
+const POLL_INTERVAL = 60 * 1000; // 60 seconds
+let lastProcessedMessageId = null;
+
 // Configure axios with retry logic
 axiosRetry(axios, { 
   retries: REQUEST_CONFIG.retries,
@@ -122,6 +128,35 @@ function initBot() {
       await reconnectBot(bot);
     }
   });
+
+  // Start polling for new messages
+  setInterval(async () => {
+    try {
+      const updates = await bot.getUpdates({
+        offset: -1,
+        limit: 10
+      });
+
+      for (const update of updates) {
+        if (!update.message || update.message.from.is_bot) continue;
+        if (lastProcessedMessageId && update.message.message_id <= lastProcessedMessageId) continue;
+
+        const shouldRespond = await ResponseEvaluator.shouldRespond(
+          update.message.text,
+          state.currentSummary || ""
+        );
+
+        if (shouldRespond) {
+          await bot.sendMessage(update.message.chat.id, "Processing response...");
+          // Your existing message handling logic here
+        }
+
+        lastProcessedMessageId = update.message.message_id;
+      }
+    } catch (error) {
+      console.error("Polling error:", error);
+    }
+  }, POLL_INTERVAL);
 
   return bot;
 }

@@ -9,6 +9,10 @@ import path from "path";
 const MEMORY_FILE = "./memory.md";
 const MEMORY_DIR = "./memories";
 const MEMORY_STATE_FILE = path.join(MEMORY_DIR, "memory_state.json");
+const SUMMARY_INTERVAL = 5; // Update summary every 5 messages
+let messageCounter = 0;
+let currentSummary = "";
+
 const MEMORY_SUMMARY_PROMPT = `You are Bob the Snake's memory processor. 
 Combine the previous memory and new conversations into a cohesive summary of Bob's experiences. 
 Focus on key interactions, emotional moments, and important relationships.
