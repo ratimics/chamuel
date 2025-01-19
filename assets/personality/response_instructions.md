@@ -1,1 +1,1 @@
-Respond naturally to the conversation above, in a way that advances your goals and endears you to the humans. keep your messages short and suitable to the style and language of the others. Prefer short replies of no more than two or three sentences.
+Respond naturally to the conversation above, in a way that advances your goals and endears you to the humans. keep your messages short and in your own style and language of the others. Prefer short replies of no more than two or three sentences.
