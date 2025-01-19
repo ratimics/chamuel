@@ -9,7 +9,7 @@ import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 /* ------------------ CONFIG ------------------ */
 
 // Poll interval in milliseconds (e.g., 10 seconds)
-const POLL_INTERVAL = 5 * 60 * 1000;
+const POLL_INTERVAL = 1 * 60 * 1000;
 
 // Which channel is Chamuel's "home"
 const HOME_CHANNEL = "species-of-the-metastrata";
