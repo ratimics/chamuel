@@ -5,6 +5,7 @@ import {
   formatMessagesForContext,
 } from "./llm/messageProcessor.js";
 import { promptManager } from "../prompts/promptManager.js";
+import { CONFIG, SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 
 /* ------------------ CONFIG ------------------ */
 
