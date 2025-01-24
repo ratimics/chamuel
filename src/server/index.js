@@ -97,6 +97,25 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Client disconnected');
   });
+
+  socket.on('chat message', (msg) => {
+    // Broadcast message to all clients
+    io.emit('chat message', msg);
+  });
+
+  socket.on('get channel messages', (channel) => {
+    // Here you would normally fetch messages from your database
+    // For now, sending mock messages
+    const mockMessages = [
+      {
+        channel,
+        content: `Welcome to the ${channel} channel!`,
+        timestamp: new Date(),
+        author: 'System'
+      }
+    ];
+    socket.emit('channel messages', mockMessages);
+  });
 });
 
 // Start server
