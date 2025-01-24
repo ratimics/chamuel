@@ -4,8 +4,7 @@ import {
   processLLMResponse,
   formatMessagesForContext,
 } from "./llm/messageProcessor.js";
-import { promptManager } from "../prompts/promptManager.js";
-import { CONFIG, SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
+import { SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index.js";
 
 /* ------------------ CONFIG ------------------ */
 
@@ -13,7 +12,7 @@ import { CONFIG, SYSTEM_PROMPT, RESPONSE_INSTRUCTIONS } from "../../config/index
 const POLL_INTERVAL = 1 * 60 * 1000;
 
 // Which channel is Chamuel's "home"
-const HOME_CHANNEL = "species-of-the-metastrata";
+const HOME_CHANNEL = "solar-temple";
 
 // Import model from chamber service
 import { BOT_MODEL, BOT_NAME } from "./chamberService.js";
