@@ -2,7 +2,7 @@ const socket = io();
 const statusElement = document.getElementById('status');
 const journalContent = document.querySelector('#journal .journal-content');
 const statsContent = document.querySelector('#stats .stats-content');
-const telegramFeed = document.querySelector('#telegram .feed-content');
+const messageFeed = document.querySelector('#messages .feed-content');
 
 // Socket event handlers
 socket.on('connect', () => {
@@ -15,8 +15,8 @@ socket.on('disconnect', () => {
   statusElement.style.backgroundColor = '#c0392b';
 });
 
-socket.on('telegram:message', (message) => {
-  appendToFeed(telegramFeed, message);
+socket.on('message', (message) => {
+  appendToFeed(messageFeed, message);
 });
 
 // API calls
