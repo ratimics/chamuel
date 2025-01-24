@@ -33,4 +33,24 @@ async function savePrompt(type) {
   }
 }
 
-window.addEventListener('load', loadPrompts);
+async function loadMemories() {
+  try {
+    const response = await fetch('/api/memories');
+    const memories = await response.json();
+    
+    const memoriesList = document.getElementById('memoriesList');
+    memoriesList.innerHTML = memories.map(memory => `
+      <div class="memory-item">
+        <div class="memory-date">${memory.date}</div>
+        ${memory.content}
+      </div>
+    `).join('');
+  } catch (error) {
+    console.error('Error loading memories:', error);
+  }
+}
+
+window.addEventListener('load', () => {
+  loadPrompts();
+  loadMemories();
+});
