@@ -5,6 +5,7 @@ import { JournalService } from '../services/journal/journal.js';
 import { promptManager } from '../services/prompts/promptManager.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs/promises';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -17,6 +18,32 @@ const journalService = new JournalService();
 app.use(express.static(path.join(__dirname, 'static')));
 
 // API Routes
+app.get('/api/memories', async (req, res) => {
+  try {
+    const memoryDir = './memories';
+    const files = await fs.readdir(memoryDir);
+    const memories = [];
+    
+    for (const file of files) {
+      if (file.startsWith('memory_') && file.endsWith('.md')) {
+        const content = await fs.readFile(path.join(memoryDir, file), 'utf-8');
+        const date = file.replace('memory_', '').replace('.md', '');
+        memories.push({
+          date,
+          content
+        });
+      }
+    }
+    
+    // Sort by date descending (newest first)
+    memories.sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json(memories);
+  } catch (error) {
+    console.error('Error loading memories:', error);
+    res.status(500).json({ error: 'Failed to load memories' });
+  }
+});
+
 app.get('/api/journal/latest', async (req, res) => {
   try {
     const journal = await journalService.loadJournal();
