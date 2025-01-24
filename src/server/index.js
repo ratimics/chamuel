@@ -2,7 +2,6 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { JournalService } from '../services/journal/journal.js';
-import { CONFIG } from '../config/index.js';
 import { promptManager } from '../services/prompts/promptManager.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
