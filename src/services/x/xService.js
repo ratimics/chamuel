@@ -7,10 +7,10 @@ import process from "process";
 import { Buffer } from "buffer";
 import sharp from "sharp";
 import { TwitterApi } from "twitter-api-v2";
+import { OpenAI } from "openai";
 
 import { SYSTEM_PROMPT, CONFIG } from "../../config/index.js";
 import { retry } from "../../utils/retry.js";
-import { OpenAI } from "openai";
 
 //--------------------------------------
 // Validate Environment Variables
@@ -25,26 +25,26 @@ if (CONFIG.X_POST_CHANCE < 0 || CONFIG.X_POST_CHANCE > 1) {
 }
 
 export class XService {
-  // Private static fields for rate limit tracking, last post time, etc.
+  static #client;
+  static #openai;
   static #rateLimitReset = 0;
   static #lastPostTime = 0;
 
-  // Instantiate our OpenAI and TwitterApi clients just once
-  static #openai = new OpenAI({
-    baseURL: process.env.OPENAI_API_URL,
-    apiKey: process.env.OPENAI_API_KEY,
-    defaultHeaders: {
-      "HTTP-Referer": process.env.YOUR_SITE_URL,
-      "X-Title": process.env.YOUR_SITE_NAME,
-    },
-  });
+  static initialize() {
+    if (!XService.#client) {
+      XService.#client = new TwitterApi({
+        appKey: process.env.X_API_KEY,
+        appSecret: process.env.X_API_KEY_SECRET,
+        accessToken: process.env.X_ACCESS_TOKEN,
+        accessSecret: process.env.X_ACCESS_TOKEN_SECRET,
+      });
 
-  static #xClient = new TwitterApi({
-    appKey: process.env.X_API_KEY,
-    appSecret: process.env.X_API_KEY_SECRET,
-    accessToken: process.env.X_ACCESS_TOKEN,
-    accessSecret: process.env.X_ACCESS_TOKEN_SECRET,
-  });
+      XService.#openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      });
+    }
+    return XService.#client;
+  }
 
   //--------------------------------------
   // Private Utility Methods
@@ -111,7 +111,7 @@ export class XService {
     }
 
     try {
-      const mediaId = await XService.#xClient.v1.uploadMedia(
+      const mediaId = await XService.#client.v1.uploadMedia(
         Buffer.from(imageBuffer),
         { mimeType: `image/${type}` },
       );
@@ -127,166 +127,73 @@ export class XService {
   // Public Methods
   //--------------------------------------
 
-  /**
-   * Posts one or more tweets, optionally including an image, as a thread.
-   * @param {Object} params - Tweet parameters (must include `text`).
-   * @param {string} accountId - If provided, the tweet(s) will reply to this tweetId (thread).
-   * @param {Buffer|null} imageBuffer - If provided, includes an image as the first tweet's media.
-   * @param {string} [type="png"] - The image format.
-   * @returns {Promise<{ id: string | null }>} The final tweet ID or null if it failed.
-   */
-  static async post(params, accountId = "", imageBuffer = null, type = "png") {
-    const { text, ...otherParams } = params;
-    const tweetChunks = XService.#chunkText(text || "");
+  static async post(params, retryCount = 3) {
+    if (!XService.#client) XService.initialize();
 
-    // Rate-limit check
-    if (Date.now() < XService.#rateLimitReset) {
-      console.log(
-        `🌳 Rate limit exceeded, retrying in ${XService.#rateLimitReset} seconds...`,
-      );
-      return null;
-    }
-
-    let inReplyToTweetId = accountId || null;
-    const maxRetries = 3;
-    let mediaId = null;
-
-    // If an image is provided, upload it
-    if (imageBuffer) {
+    return await retry(async () => {
       try {
-        mediaId = await XService.#uploadImageBuffer(imageBuffer, type);
+        const response = await XService.#client.v2.tweet(params);
+        console.log('🌳 Tweet posted successfully:', response);
+        return response;
       } catch (error) {
-        console.error("🌳 Failed to upload image, proceeding without it.");
-        console.error(error);
-      }
-    }
-
-    let index = 0;
-    for (const chunk of tweetChunks) {
-      let success = false;
-      let attempt = 0;
-
-      // Delay between posting each chunk (thread)
-      await XService.#delay(5000);
-
-      while (attempt < maxRetries && !success) {
-        try {
-          const tweetPayload = {
-            text: chunk,
-            ...otherParams,
-            reply: inReplyToTweetId
-              ? { in_reply_to_tweet_id: inReplyToTweetId }
-              : undefined,
-          };
-
-          // Attach mediaId if available and it's the first chunk
-          if (mediaId && index === 0) {
-            tweetPayload.media = { media_ids: [mediaId] };
-          }
-
-          const response = await XService.#xClient.v2.tweet(tweetPayload);
-          console.log("🌳 Tweet posted successfully:", response);
-
-          // Use the newly posted tweet ID for the next tweet in the thread
-          inReplyToTweetId = response.data.id;
-          success = true;
-        } catch (error) {
-          attempt++;
-          console.error(
-            `🌳 Error posting tweet (Attempt ${attempt}/${maxRetries}):`,
-            error,
-          );
-          if (attempt < maxRetries && error.rateLimit && error.rateLimit.reset) {
-            console.log(
-              `🌳 Rate limit exceeded, retrying in ${error.rateLimit.reset} seconds...`,
-            );
-            XService.#rateLimitReset = error.rateLimit.reset;
-            break; // Exit the retry loop to wait for the next attempt
-          } else {
-            console.error(
-              "🌳 Failed to post tweet after multiple attempts. Exiting...",
-            );
-            break;
-          }
+        if (error.rateLimit) {
+          XService.#rateLimitReset = Date.now() + (error.rateLimit.reset * 1000);
+          throw new Error(`Rate limit exceeded. Reset at ${new Date(XService.#rateLimitReset)}`);
         }
+        throw error;
       }
-
-      if (!success) {
-        // Stop posting subsequent chunks if the current chunk fails
-        break;
-      }
-      index++;
-    }
-
-    return { id: inReplyToTweetId };
+    }, retryCount);
   }
 
-  /**
-   * Attempts to post an image to Twitter/X after verifying time and random gating.
-   * Uses OpenAI to generate tweet text based on `imagePrompt`.
-   * @param {Buffer} imageBuffer - Image data.
-   * @param {string} imagePrompt - The prompt that was used to generate the image.
-   * @param {string} [type="png"] - The image format.
-   * @returns {Promise<{ text: string, url: string } | null>} The tweet text and URL, or null if not posted.
-   */
   static async maybePostImage(imageBuffer, imagePrompt, type = "png") {
-    // Time gating
     if (Date.now() - XService.#lastPostTime < CONFIG.XPOST_INTERVAL) {
       return null;
     }
 
-    // Random gating
     if (Math.random() >= CONFIG.X_POST_CHANCE) {
       return null;
     }
 
     try {
-      // Generate tweet text using OpenAI
+      // Image processing
+      while (imageBuffer.length > 5242880) {
+        const metadata = await sharp(imageBuffer).metadata();
+        imageBuffer = await sharp(imageBuffer)
+          .resize(Math.floor(metadata.width * 0.8), Math.floor(metadata.height * 0.8))
+          .toBuffer();
+      }
+
+      // Generate tweet text
       const tweetResponse = await XService.#openai.chat.completions.create({
         model: CONFIG.AI.TEXT_MODEL,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "assistant",
-            content: `I generated an image with prompt: ${imagePrompt}`,
-          },
-          {
-            role: "user",
-            content: "Write a tweet to go along with the image you generated.",
-          },
+          { role: "system", content: CONFIG.SYSTEM_PROMPT },
+          { role: "assistant", content: `Generated image with prompt: ${imagePrompt}` },
+          { role: "user", content: "Write a tweet for this image." }
         ],
         max_tokens: 128,
         temperature: 0.8,
       });
 
-      let tweetText = tweetResponse.choices?.[0]?.message?.content?.trim();
-      if (!tweetText) {
-        console.warn("Failed to generate tweet text; using default.");
-        tweetText = "Checkout my new image!";
-      }
+      const tweetText = tweetResponse.choices[0]?.message?.content?.trim() || "Check out this image!";
+      const mediaId = await XService.#client.v1.uploadMedia(Buffer.from(imageBuffer), {
+        mimeType: `image/${type}`
+      });
 
-      // Attempt to post to Twitter/X with retry logic
-      const tweetResult = await retry(
-        () => XService.post({ text: tweetText }, "", imageBuffer, type),
-        2,
-      );
+      const tweet = await XService.post({
+        text: tweetText,
+        media: { media_ids: [mediaId] }
+      });
 
-      if (!tweetResult?.id) {
-        console.error("Failed to post the image after retries.");
-        return null;
-      }
-
-      // Update last post time after a successful post
       XService.#lastPostTime = Date.now();
 
-      // Build the tweet URL
-      const tweetURL = `${process.env.X_BASE_URL || "https://x.com"}/bobthesnek/status/${tweetResult.id}`;
       return {
         text: tweetText,
-        url: tweetURL,
+        url: `https://x.com/status/${tweet.data.id}`
       };
+
     } catch (error) {
-      console.error("An error occurred during the post process:", error);
+      console.error('Error posting image to X:', error);
       return null;
     }
   }
@@ -337,7 +244,7 @@ export class XService {
 
         // Make the search request
         // We can expand author_id or other expansions if we want user info
-        const searchResponse = await XService.#xClient.v2.search(query, {
+        const searchResponse = await XService.#client.v2.search(query, {
           max_results: 50,
           expansions: "author_id",
         });
