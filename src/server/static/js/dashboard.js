@@ -78,17 +78,13 @@ function displayStats(stats) {
 }
 
 function appendToFeed(feedElement, message) {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = 'feed-item';
-  messageDiv.innerHTML = `
-    <small>${new Date(message.timestamp).toLocaleString()}</small>
-    <p><strong>${message.user}:</strong> ${message.text}</p>
-  `;
-  feedElement.insertBefore(messageDiv, feedElement.firstChild);
-  
-  // Keep only last 50 messages
-  while (feedElement.children.length > 50) {
-    feedElement.removeChild(feedElement.lastChild);
+  if (message.sender?.username === "Chamuel") {
+    feedElement.innerHTML = `
+      <div class="feed-item">
+        <small>${new Date(message.timestamp).toLocaleString()}</small>
+        <p><strong>Chamuel:</strong> ${message.content}</p>
+      </div>
+    `;
   }
 }
 
