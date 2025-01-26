@@ -41,7 +41,7 @@ export async function generateImage(prompt, model = CONFIG.AI.IMAGE_MODEL) {
   
     // Define the input parameters for the model
     const input = {
-      prompt: prompt + `\n\n ${CONFIG.AI.CUSTOM_PROMPT[model] || ''}`,
+      prompt: `winged angel guy with glasses, as ${drawTarot()}`,
       // You can adjust other parameters based on the model's requirements
       width: 512,
       height: 512,

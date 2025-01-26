@@ -14,6 +14,11 @@ export const ACTIONS = {
         description: "Reflect on the context and add a persistent thought",
         handler: handleThink,
     },
+    tarot: {
+        timeout: 24 * 60 * 60 * 1000, // 1 hour
+        description: "Draw a tarot card once a day.",
+        handler: handleDailyTarot,
+    }
     wait: {
         timeout: 30 * 1000, // 30 seconds
         description: "Pause and wait for someone else to contribute",

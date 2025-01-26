@@ -63,7 +63,7 @@ export class ChamberService {
     while (attempts < this.maxRetries) {
       try {
         const response = await this.client.get("/rooms");
-        if (response?.data?.rooms) {
+        if (response?.rooms) {
           console.log("[ChamberService] Successfully connected to server.");
           return true;
         }
